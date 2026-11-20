@@ -12,16 +12,15 @@ const env = { account: "123456789012", region: "ap-southeast-2" };
 describe("本体スタック", () => {
   const template = Template.fromStack(new ShinkokuStack(new App(), "Test", { env }));
 
-  it("お金のかかる NAT ゲートウェイを作らない", () => {
+  it("お金のかかる NAT ゲートウェイもネットワーク（VPC）も作らない", () => {
     template.resourceCountIs("AWS::EC2::NatGateway", 0);
+    template.resourceCountIs("AWS::EC2::VPC", 0);
   });
 
-  it("DB は使わないとき0まで縮み、Data API が使える", () => {
+  it("DB は無料プランで使えるエクスプレス構成の Aurora PostgreSQL", () => {
     template.hasResourceProperties("AWS::RDS::DBCluster", {
       Engine: "aurora-postgresql",
-      EnableHttpEndpoint: true,
-      StorageEncrypted: true,
-      ServerlessV2ScalingConfiguration: { MinCapacity: 0, MaxCapacity: 2 },
+      WithExpressConfiguration: true,
     });
   });
 
@@ -29,6 +28,10 @@ describe("本体スタック", () => {
     template.hasResourceProperties("AWS::RDS::DBCluster", {
       BackupRetentionPeriod: 1,
     });
+  });
+
+  it("ログインの利用者も消えない（作成失敗のときだけ残さない）", () => {
+    template.hasResource("AWS::Cognito::UserPool", { DeletionPolicy: "RetainExceptOnCreate" });
   });
 
   it("利用者は自分で登録できない（2人だけで使う）", () => {
@@ -56,9 +59,9 @@ describe("本体スタック", () => {
     }
   });
 
-  it("レシート置き場は版を残し、スタックを消しても消えない", () => {
+  it("レシート置き場は版を残し、スタックを消しても消えない（作成失敗のときだけ残さない）", () => {
     template.hasResource("AWS::S3::Bucket", {
-      DeletionPolicy: "Retain",
+      DeletionPolicy: "RetainExceptOnCreate",
       Properties: Match.objectLike({ VersioningConfiguration: { Status: "Enabled" } }),
     });
   });
