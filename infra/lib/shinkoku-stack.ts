@@ -57,7 +57,8 @@ export class ShinkokuStack extends Stack {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       storageEncrypted: true,
-      backup: { retention: Duration.days(7) },
+      // 無料プランではバックアップは1日分までしか残せない（7日にすると作成が失敗する）
+      backup: { retention: Duration.days(1) },
       removalPolicy: RemovalPolicy.SNAPSHOT, // 消すときは最後にバックアップを残す
     });
 
