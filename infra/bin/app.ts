@@ -13,7 +13,7 @@ const env = {
 
 new GithubOidcStack(app, "ShinkokuGithubOidc", {
   env,
-  repository: "lunamoon-00/shinkoku-note",
+  subjectPrefix: "repo:lunamoon-00@204539346/shinkoku-note@1465897294",
   description: "申告ノート: GitHub Actions から AWS に入るための設定",
 });
 
