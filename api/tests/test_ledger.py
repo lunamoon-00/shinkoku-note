@@ -138,6 +138,14 @@ def test_利用者の設定は最初に見たときに作られ_変更できる(
     assert (p["mode"], p["display_name"]) == ("freee", "みちる")
 
 
+def test_はじめの質問が終わった印をつけられる(app_con):
+    with db.as_user(app_con, ALICE):
+        assert ledger.get_profile(app_con, ALICE)["onboarded"] is False
+        assert ledger.update_profile(app_con, ALICE, {"onboarded": True})["onboarded"] is True
+        # ほかの設定を変えても、印は消えない
+        assert ledger.update_profile(app_con, ALICE, {"display_name": "a"})["onboarded"] is True
+
+
 def test_設定におかしな値は入れられない(app_con):
     with db.as_user(app_con, ALICE):
         with pytest.raises(ledger.ValidationError):

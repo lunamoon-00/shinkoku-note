@@ -1,0 +1,36 @@
+{
+  "name": "shinkoku-note-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:mock": "node scripts/with-mock.mjs dev --port 3100",
+    "build": "next build",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run lib",
+    "e2e": "playwright test",
+    "gen:accounts": "python scripts/gen-mock-accounts.py",
+    "build:mock": "node scripts/with-mock.mjs build",
+    "serve:out": "node scripts/serve-out.mjs 3100"
+  },
+  "dependencies": {
+    "aws-amplify": "6.22.2",
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "24.19.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5",
+    "vitest": "5.1.1"
+  }
+}

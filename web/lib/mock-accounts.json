@@ -1,0 +1,281 @@
+[
+ {
+  "code": "1100",
+  "name": "現金",
+  "friendly_name": "お財布の現金",
+  "description": "手元にある現金。",
+  "kind": "asset",
+  "normal_side": "debit",
+  "white_line": null
+ },
+ {
+  "code": "1200",
+  "name": "普通預金",
+  "friendly_name": "銀行口座",
+  "description": "仕事のお金が出入りする銀行口座。",
+  "kind": "asset",
+  "normal_side": "debit",
+  "white_line": null
+ },
+ {
+  "code": "1300",
+  "name": "売掛金",
+  "friendly_name": "まだ入金されていない報酬",
+  "description": "仕事は終わったけれど、まだ振り込まれていない報酬。",
+  "kind": "asset",
+  "normal_side": "debit",
+  "white_line": null
+ },
+ {
+  "code": "1900",
+  "name": "事業主貸",
+  "friendly_name": "仕事のお金を生活に使った",
+  "description": "仕事の口座から生活費を出したときなどに使う。源泉徴収で引かれた税金もここ。",
+  "kind": "asset",
+  "normal_side": "debit",
+  "white_line": null
+ },
+ {
+  "code": "2100",
+  "name": "未払金",
+  "friendly_name": "まだ払っていない代金",
+  "description": "カードで払って、まだ引き落とされていない代金など。",
+  "kind": "liability",
+  "normal_side": "credit",
+  "white_line": null
+ },
+ {
+  "code": "2900",
+  "name": "事業主借",
+  "friendly_name": "生活のお金で仕事の物を買った",
+  "description": "自分のお財布や個人の口座から、仕事の物を払ったときに使う。",
+  "kind": "liability",
+  "normal_side": "credit",
+  "white_line": null
+ },
+ {
+  "code": "3100",
+  "name": "元入金",
+  "friendly_name": "はじめに入れたお金",
+  "description": "事業のもとでになるお金。年のはじめに自動で計算する。",
+  "kind": "equity",
+  "normal_side": "credit",
+  "white_line": null
+ },
+ {
+  "code": "4100",
+  "name": "売上",
+  "friendly_name": "仕事の報酬（売上）",
+  "description": "仕事をしてもらったお金。源泉徴収される前の金額で記録する。",
+  "kind": "revenue",
+  "normal_side": "credit",
+  "white_line": "売上（収入）金額"
+ },
+ {
+  "code": "4900",
+  "name": "雑収入",
+  "friendly_name": "そのほかの収入",
+  "description": "仕事に関係する、売上以外のちょっとした収入。",
+  "kind": "revenue",
+  "normal_side": "credit",
+  "white_line": "その他の収入"
+ },
+ {
+  "code": "5010",
+  "name": "給料賃金",
+  "friendly_name": "人に払ったお給料",
+  "description": "人を雇って払ったお給料。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "給料賃金"
+ },
+ {
+  "code": "5020",
+  "name": "外注工賃",
+  "friendly_name": "仕事の一部をお願いした代金",
+  "description": "ほかの人や会社に仕事の一部をお願いして払ったお金。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "外注工賃"
+ },
+ {
+  "code": "5030",
+  "name": "減価償却費",
+  "friendly_name": "高い物を何年かに分けた経費",
+  "description": "10万円以上のパソコンなど、何年かに分けて経費にする分。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "減価償却費"
+ },
+ {
+  "code": "5040",
+  "name": "貸倒金",
+  "friendly_name": "回収できなくなった報酬",
+  "description": "もらえるはずの報酬が、相手の倒産などでもらえなくなった分。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "貸倒金"
+ },
+ {
+  "code": "5050",
+  "name": "地代家賃",
+  "friendly_name": "家賃・駐車場代",
+  "description": "事務所や自宅の家賃のうち、仕事で使っている分。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "地代家賃"
+ },
+ {
+  "code": "5060",
+  "name": "利子割引料",
+  "friendly_name": "借りたお金の利息",
+  "description": "仕事のために借りたお金の利息。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "利子割引料"
+ },
+ {
+  "code": "5100",
+  "name": "租税公課",
+  "friendly_name": "仕事にかかる税金・印紙",
+  "description": "事業税・印紙代など。所得税や住民税は入らない。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "租税公課"
+ },
+ {
+  "code": "5110",
+  "name": "荷造運賃",
+  "friendly_name": "送料・梱包代",
+  "description": "物を送るときの送料や、段ボールなどの梱包材。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "荷造運賃"
+ },
+ {
+  "code": "5120",
+  "name": "水道光熱費",
+  "friendly_name": "電気・ガス・水道代",
+  "description": "仕事で使っている分の電気・ガス・水道代。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "水道光熱費"
+ },
+ {
+  "code": "5130",
+  "name": "旅費交通費",
+  "friendly_name": "電車・バス・出張の交通費",
+  "description": "仕事で移動したときの交通費や宿泊代。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "旅費交通費"
+ },
+ {
+  "code": "5140",
+  "name": "通信費",
+  "friendly_name": "スマホ・ネット代・切手",
+  "description": "スマホ・インターネット・切手などのうち、仕事で使う分。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "通信費"
+ },
+ {
+  "code": "5150",
+  "name": "広告宣伝費",
+  "friendly_name": "宣伝・広告の代金",
+  "description": "チラシ・ネット広告・名刺など、仕事を知ってもらうための代金。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "広告宣伝費"
+ },
+ {
+  "code": "5160",
+  "name": "接待交際費",
+  "friendly_name": "仕事相手との食事・贈り物",
+  "description": "取引先との食事やお中元・お歳暮など。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "接待交際費"
+ },
+ {
+  "code": "5170",
+  "name": "損害保険料",
+  "friendly_name": "仕事の保険料",
+  "description": "仕事で使う物や事務所の火災保険など。生命保険は入らない。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "損害保険料"
+ },
+ {
+  "code": "5180",
+  "name": "修繕費",
+  "friendly_name": "修理代",
+  "description": "仕事で使う物の修理代。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "修繕費"
+ },
+ {
+  "code": "5190",
+  "name": "消耗品費",
+  "friendly_name": "仕事の道具・文房具",
+  "description": "10万円未満の道具・文房具・ソフトなど。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "消耗品費"
+ },
+ {
+  "code": "5200",
+  "name": "福利厚生費",
+  "friendly_name": "働く人のための費用",
+  "description": "雇っている人のための健康診断や慰安など。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "福利厚生費"
+ },
+ {
+  "code": "5210",
+  "name": "新聞図書費",
+  "friendly_name": "本・新聞・資料代",
+  "description": "仕事のための本・雑誌・新聞・有料の資料。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "その他の経費"
+ },
+ {
+  "code": "5220",
+  "name": "支払手数料",
+  "friendly_name": "振込手数料・サービスの手数料",
+  "description": "振込手数料や、仕事で使うサービスの手数料。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "その他の経費"
+ },
+ {
+  "code": "5230",
+  "name": "会議費",
+  "friendly_name": "打ち合わせのお茶代",
+  "description": "仕事の打ち合わせのときのカフェ代など。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "その他の経費"
+ },
+ {
+  "code": "5240",
+  "name": "研修費",
+  "friendly_name": "勉強・講座の費用",
+  "description": "仕事に必要な講座やセミナーの参加費。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "その他の経費"
+ },
+ {
+  "code": "5900",
+  "name": "雑費",
+  "friendly_name": "そのほかの経費",
+  "description": "どれにも当てはまらない、少ない金額の経費。",
+  "kind": "expense",
+  "normal_side": "debit",
+  "white_line": "雑費"
+ }
+]

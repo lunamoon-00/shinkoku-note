@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* ───────── デザインの土台（色・文字・角の丸み） ─────────
+   うすい紫を基本に、やさしく・読みやすく。ダークモードも同じ名前の色で切りかえる。 */
+:root {
+  --bg: #f7f5fb;
+  --surface: #ffffff;
+  --surface-2: #f1eef8;
+  --text: #2b2440;
+  --sub: #6b6385;
+  --border: #e6e1f2;
+  --accent: #7c63d6;
+  --accent-strong: #6a50c8;
+  --accent-soft: #ede8fb;
+  --on-accent: #ffffff;
+  --in: #2f8f63; /* 入ってきたお金 */
+  --in-soft: #e5f4ec;
+  --out: #c4563e; /* 出ていったお金 */
+  --out-soft: #fbece8;
+  --warn: #a8700c;
+  --warn-soft: #fbf1dc;
+  --danger: #c93a54;
+  --danger-soft: #fbe7eb;
+  --shadow: 0 1px 2px rgb(43 36 64 / 0.04), 0 4px 16px rgb(43 36 64 / 0.06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15121c;
+    --surface: #1e1a28;
+    --surface-2: #262133;
+    --text: #ece8f7;
+    --sub: #a9a2c0;
+    --border: #322c42;
+    --accent: #b3a1ee;
+    --accent-strong: #c6b8f4;
+    --accent-soft: #2b2540;
+    --on-accent: #1a1524;
+    --in: #6fd1a1;
+    --in-soft: #183327;
+    --out: #f19a85;
+    --out-soft: #3a211b;
+    --warn: #e9bb5d;
+    --warn-soft: #362a12;
+    --danger: #f08ca0;
+    --danger-soft: #3c1b23;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-sub: var(--sub);
+  --color-line: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-in: var(--in);
+  --color-in-soft: var(--in-soft);
+  --color-out: var(--out);
+  --color-out-soft: var(--out-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --shadow-card: var(--shadow);
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
+  --radius-card: 1.25rem;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 数字はそろえて読みやすく */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* キーボードで操作したときの目印 */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+/* 動きを減らしたい人の設定を尊重する */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
