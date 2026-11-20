@@ -8,9 +8,11 @@ import { ShinkokuStack } from "../lib/shinkoku-stack.js";
 import { WebStack } from "../lib/web-stack.js";
 
 const env = { account: "123456789012", region: "ap-southeast-2" };
+// テストでは Lambda のコードのまとめ作業（pip install）を飛ばして速くする
+const testApp = () => new App({ context: { "aws:cdk:bundling-stacks": [] } });
 
 describe("本体スタック", () => {
-  const template = Template.fromStack(new ShinkokuStack(new App(), "Test", { env }));
+  const template = Template.fromStack(new ShinkokuStack(testApp(), "Test", { env }));
 
   it("お金のかかる NAT ゲートウェイもネットワーク（VPC）も作らない", () => {
     template.resourceCountIs("AWS::EC2::NatGateway", 0);
@@ -24,10 +26,50 @@ describe("本体スタック", () => {
     });
   });
 
-  it("DB のバックアップは無料プランの上限（1日）におさめる", () => {
+  it("DB のバックアップは無料プランの上限（1日）におさめ、保存データは暗号化する", () => {
     template.hasResourceProperties("AWS::RDS::DBCluster", {
       BackupRetentionPeriod: 1,
+      StorageEncrypted: true,
     });
+  });
+
+  it("API はすべてログインが必要（Cognito のトークンを確かめる）", () => {
+    const routes = template.findResources("AWS::ApiGatewayV2::Route");
+    expect(Object.keys(routes).length).toBe(10);
+    for (const route of Object.values(routes)) {
+      expect(route.Properties.AuthorizationType).toBe("JWT");
+    }
+  });
+
+  it("API は呼ばれすぎないように速さの上限がある", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
+      DefaultRouteSettings: { ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20 },
+    });
+  });
+
+  it("Lambda は Python 3.13・arm64", () => {
+    const fns = template.findResources("AWS::Lambda::Function", {
+      Properties: { Runtime: "python3.13" },
+    });
+    expect(Object.keys(fns).length).toBe(2); // API とマイグレーション
+    for (const fn of Object.values(fns)) {
+      expect(fn.Properties.Architectures).toEqual(["arm64"]);
+    }
+  });
+
+  it("API の Lambda はアプリ用ユーザーとしてだけ DB につなげる（管理ユーザーは使えない）", () => {
+    const fns = template.findResources("AWS::Lambda::Function", {
+      Properties: { Handler: "shinkoku.handler.handler" },
+    });
+    const [apiFn] = Object.values(fns);
+    expect(apiFn.Properties.Environment.Variables.DB_USER).toBe("shinkoku_app");
+    const policies = JSON.stringify(template.findResources("AWS::IAM::Policy"));
+    expect(policies).toContain("/shinkoku_app");
+    expect(policies).toContain("/postgres"); // マイグレーション用だけ
+  });
+
+  it("公開のたびにマイグレーションを自動で流す", () => {
+    template.resourceCountIs("Custom::Trigger", 1);
   });
 
   it("ログインの利用者も消えない（作成失敗のときだけ残さない）", () => {
@@ -90,7 +132,7 @@ describe("画面のスタック", () => {
   });
 
   it("本体スタックには CloudFront を入れない（アカウント確認前でも反映できるように）", () => {
-    const main = Template.fromStack(new ShinkokuStack(new App(), "TestMain", { env }));
+    const main = Template.fromStack(new ShinkokuStack(testApp(), "TestMain", { env }));
     main.resourceCountIs("AWS::CloudFront::Distribution", 0);
   });
 });

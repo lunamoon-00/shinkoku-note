@@ -39,7 +39,7 @@ AI（Claude Code・Cursor）がこのリポジトリで作業するときの説�
 |---|---|---|
 | `infra/` | AWSの設定（CDK） | TypeScript |
 | `api/` | Lambdaの関数（帳簿API・取り込み・freee送信・申告計算） | Python |
-| `db/` | テーブル作成・変更のSQL（マイグレーション） | SQL |
+| `api/shinkoku/migrations/` | テーブル作成・変更のSQL（マイグレーション）。番号順に流す。一度AWSに流したファイルは書きかえず、新しい番号のファイルを足す | SQL |
 | `web/` | 画面（静的書き出し→S3＋CloudFront） | TypeScript / Next.js |
 | `docs/` | 設計書など | — |
 | `.github/workflows/` | 自動テスト・自動公開 | YAML |

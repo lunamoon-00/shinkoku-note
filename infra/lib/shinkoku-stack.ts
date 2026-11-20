@@ -1,9 +1,25 @@
 // 申告ノートの本体：ログイン・DB・ファイル置き場。（画面の配信は web-stack.ts）
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as triggers from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
+import { pythonCode } from "./python-code.js";
+
+/** 画面からAPIを呼んでよい場所（Phase 3 で本番の画面のURLを足す） */
+const ALLOWED_ORIGINS = ["http://localhost:3000"];
+
+/** DBの名前とユーザー（マイグレーションが作る） */
+const DB_NAME = "shinkoku";
+const DB_ADMIN_USER = "postgres";
+const DB_APP_USER = "shinkoku_app";
 
 export class ShinkokuStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -44,6 +60,8 @@ export class ShinkokuStack extends Stack {
       withExpressConfiguration: true,
       // 無料プランではバックアップは1日分までしか残せない（7日にすると作成が失敗する）
       backupRetentionPeriod: 1,
+      // 保存するデータを暗号化する（エクスプレス構成の初期値はオフなので、明示してオンにする）
+      storageEncrypted: true,
     });
     db.applyRemovalPolicy(RemovalPolicy.SNAPSHOT); // 消すときは最後にバックアップを残す
 
@@ -57,7 +75,99 @@ export class ShinkokuStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
     });
 
+
+    // ───────── API（API Gateway + Lambda） ─────────
+    const code = pythonCode();
+    const dbEnv = { DB_HOST: db.attrEndpointAddress, DB_PORT: "5432", DB_NAME };
+
+    // 「このDBに、このユーザーとしてつないでいい」という通行証の権限
+    const dbConnect = (user: string) =>
+      new iam.PolicyStatement({
+        actions: ["rds-db:connect"],
+        resources: [
+          `arn:aws:rds-db:${this.region}:${this.account}:dbuser:${db.attrDbClusterResourceId}/${user}`,
+        ],
+      });
+
+    // 帳簿のAPI。権限をしぼったアプリ用ユーザー（shinkoku_app）でDBにつなぐ
+    const apiFn = new lambda.Function(this, "ApiFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64, // 安くて速い
+      code,
+      handler: "shinkoku.handler.handler",
+      memorySize: 512,
+      timeout: Duration.seconds(29), // API Gateway の上限（30秒）より少し短く
+      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "20" },
+      logGroup: new logs.LogGroup(this, "ApiLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    apiFn.addToRolePolicy(dbConnect(DB_APP_USER));
+
+    // マイグレーション（テーブル作成・変更）。公開のたびに、コードが変わっていれば自動で実行される
+    const migrateFn = new lambda.Function(this, "MigrateFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      code,
+      handler: "shinkoku.migrate.handler",
+      memorySize: 256,
+      timeout: Duration.minutes(5), // DBが止まっていたら起きるのを待つ
+      environment: { ...dbEnv, DB_USER: DB_ADMIN_USER, DB_CONNECT_TIMEOUT: "120" },
+      logGroup: new logs.LogGroup(this, "MigrateLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    migrateFn.addToRolePolicy(dbConnect(DB_ADMIN_USER));
+    new triggers.Trigger(this, "MigrateOnDeploy", {
+      handler: migrateFn,
+      executeAfter: [db],
+      executeOnHandlerChange: true,
+      timeout: Duration.minutes(5),
+    });
+
+    // ログインしている人だけ通す（Cognito のトークンを API Gateway が確かめる）
+    const authorizer = new HttpUserPoolAuthorizer("CognitoAuthorizer", userPool, {
+      userPoolClients: [userPoolClient],
+    });
+    const httpApi = new apigw.HttpApi(this, "HttpApi", {
+      apiName: "shinkoku-note-api",
+      corsPreflight: {
+        allowOrigins: ALLOWED_ORIGINS,
+        allowMethods: [
+          apigw.CorsHttpMethod.GET,
+          apigw.CorsHttpMethod.POST,
+          apigw.CorsHttpMethod.PUT,
+          apigw.CorsHttpMethod.DELETE,
+        ],
+        allowHeaders: ["authorization", "content-type"],
+        maxAge: Duration.hours(1),
+      },
+    });
+    // たくさん呼ばれすぎないように、速さの上限をつける（いたずら・バグ対策）
+    const stage = httpApi.defaultStage!.node.defaultChild as apigw.CfnStage;
+    stage.defaultRouteSettings = { throttlingRateLimit: 10, throttlingBurstLimit: 20 };
+
+    const integration = new HttpLambdaIntegration("ApiIntegration", apiFn);
+    const routes: [string, apigw.HttpMethod][] = [
+      ["/me", apigw.HttpMethod.GET],
+      ["/me", apigw.HttpMethod.PUT],
+      ["/accounts", apigw.HttpMethod.GET],
+      ["/entries", apigw.HttpMethod.GET],
+      ["/entries", apigw.HttpMethod.POST],
+      ["/entries/{id}", apigw.HttpMethod.GET],
+      ["/entries/{id}", apigw.HttpMethod.PUT],
+      ["/entries/{id}", apigw.HttpMethod.DELETE],
+      ["/entries/{id}/confirm", apigw.HttpMethod.POST],
+      ["/summary", apigw.HttpMethod.GET],
+    ];
+    for (const [path, method] of routes) {
+      httpApi.addRoutes({ path, methods: [method], integration, authorizer });
+    }
+
     // ───────── 次の Phase で使う値を表示 ─────────
+    new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
     new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
     new CfnOutput(this, "DbEndpoint", { value: db.attrEndpointAddress });
