@@ -1,0 +1,7 @@
+# 行の終わりの記号を LF（Mac・Linux式）にそろえる。
+# GitHub Actions（Linuxで動く）と差分が出ないようにするため。
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.pdf binary
