@@ -5,8 +5,14 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import type { Construct } from "constructs";
 
 export interface GithubOidcStackProps extends StackProps {
-  /** 例: "lunamoon-00/shinkoku-note" */
-  repository: string;
+  /**
+   * GitHub の身分証（トークン）に書かれるリポジトリの名前。
+   * GitHub は「名前＠番号」の形（immutable subject）で送ってくる。
+   * 番号つきなので、同じ名前のリポジトリを誰かが作ってもなりすませない。
+   * 確認方法: gh api repos/<owner>/<repo>/actions/oidc/customization/sub の sub_claim_prefix
+   * 例: "repo:lunamoon-00@204539346/shinkoku-note@1465897294"
+   */
+  subjectPrefix: string;
 }
 
 export class GithubOidcStack extends Stack {
@@ -27,7 +33,7 @@ export class GithubOidcStack extends Stack {
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
         StringEquals: {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": `repo:${props.repository}:ref:refs/heads/main`,
+          "token.actions.githubusercontent.com:sub": `${props.subjectPrefix}:ref:refs/heads/main`,
         },
       }),
     });
