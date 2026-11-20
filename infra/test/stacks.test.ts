@@ -25,6 +25,12 @@ describe("本体スタック", () => {
     });
   });
 
+  it("DB のバックアップは無料プランの上限（1日）におさめる", () => {
+    template.hasResourceProperties("AWS::RDS::DBCluster", {
+      BackupRetentionPeriod: 1,
+    });
+  });
+
   it("利用者は自分で登録できない（2人だけで使う）", () => {
     template.hasResourceProperties("AWS::Cognito::UserPool", {
       AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
