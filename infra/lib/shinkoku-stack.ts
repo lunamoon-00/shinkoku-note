@@ -1,7 +1,6 @@
 // 申告ノートの本体：ログイン・DB・ファイル置き場。（画面の配信は web-stack.ts）
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
@@ -20,7 +19,8 @@ export class ShinkokuStack extends Stack {
       standardAttributes: { email: { required: true, mutable: true } },
       passwordPolicy: { minLength: 12, requireSymbols: false },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
-      removalPolicy: RemovalPolicy.RETAIN, // 消しても利用者は残す（事故防止）
+      // 消しても利用者は残す（事故防止）。ただし「最初に作るときに失敗した」ときは残さない
+      removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
     });
 
     // 画面（ブラウザ）用の入口。ブラウザには秘密を置けないので secret なし
@@ -32,35 +32,20 @@ export class ShinkokuStack extends Stack {
       preventUserExistenceErrors: true,
     });
 
-    // ───────── DB（Aurora PostgreSQL Serverless v2） ─────────
-    // DBは必ず「ネットワーク（VPC）」の中に置く決まり。
-    // 外への出口（NAT）は月数千円かかるので作らない。外とつながらない部屋（ISOLATED）だけ。
-    // Lambda からは Data API（HTTPの窓口）で話しかけるので、Lambda を VPC に入れなくてよい
-    const vpc = new ec2.Vpc(this, "Vpc", {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        { name: "db", subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
-      ],
-    });
-
-    const db = new rds.DatabaseCluster(this, "Database", {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({
-        version: rds.AuroraPostgresEngineVersion.VER_16_11,
-      }),
-      writer: rds.ClusterInstance.serverlessV2("writer"),
-      serverlessV2MinCapacity: 0, // 使っていないときは0まで縮んで止まる（安くするため）
-      serverlessV2MaxCapacity: 2, // 2人で使うだけなので上限は小さく
-      enableDataApi: true,
-      defaultDatabaseName: "shinkoku",
-      credentials: rds.Credentials.fromGeneratedSecret("shinkoku_admin"), // パスワードは自動で作って金庫へ
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      storageEncrypted: true,
+    // ───────── DB（Aurora PostgreSQL・エクスプレス構成） ─────────
+    // AWSの無料プランでは、Aurora は「エクスプレス構成」でしか作れない。
+    // - 数秒で作れて、使っていないときは0まで縮む（安い）
+    // - ネットワーク（VPC）を使わず、インターネット経由の入口（internet access gateway）でつなぐ
+    // - パスワードではなく、AWSの通行証（IAM認証）を持っている人だけがつながれる
+    //   → Lambda には「このDBにつないでいい」という権限だけを渡せばよく、パスワードの管理がいらない
+    // ※ 書き手のインスタンスはエクスプレス構成が自動で作る（CDKでは別に書かない）
+    const db = new rds.CfnDBCluster(this, "Database", {
+      engine: "aurora-postgresql",
+      withExpressConfiguration: true,
       // 無料プランではバックアップは1日分までしか残せない（7日にすると作成が失敗する）
-      backup: { retention: Duration.days(1) },
-      removalPolicy: RemovalPolicy.SNAPSHOT, // 消すときは最後にバックアップを残す
+      backupRetentionPeriod: 1,
     });
+    db.applyRemovalPolicy(RemovalPolicy.SNAPSHOT); // 消すときは最後にバックアップを残す
 
     // ───────── ファイル置き場（レシート・CSV・PDF） ─────────
     const uploadsBucket = new s3.Bucket(this, "UploadsBucket", {
@@ -68,14 +53,18 @@ export class ShinkokuStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       versioned: true, // 上書き・削除しても前の版に戻せる
-      removalPolicy: RemovalPolicy.RETAIN, // 大事な証拠なので、スタックを消しても残す
+      // 大事な証拠なので、スタックを消しても残す。ただし「最初に作るときに失敗した」ときは残さない
+      removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
     });
 
     // ───────── 次の Phase で使う値を表示 ─────────
     new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
-    new CfnOutput(this, "DbClusterArn", { value: db.clusterArn });
-    new CfnOutput(this, "DbSecretArn", { value: db.secret!.secretArn });
+    new CfnOutput(this, "DbEndpoint", { value: db.attrEndpointAddress });
+    new CfnOutput(this, "DbClusterResourceId", {
+      value: db.attrDbClusterResourceId,
+      description: "Lambda に「このDBにつないでいい」権限を渡すときに使う",
+    });
     new CfnOutput(this, "UploadsBucketName", { value: uploadsBucket.bucketName });
   }
 }

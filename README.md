@@ -19,7 +19,7 @@ LINEにレシートを送るだけで帳簿がつき、freeeへの自動登録�
 |---|---|
 | 画面 | Next.js / TypeScript（S3 + CloudFront） |
 | API・処理 | AWS Lambda（Python）、API Gateway、SQS、EventBridge Scheduler |
-| DB | Amazon Aurora PostgreSQL Serverless v2（Data API） |
+| DB | Amazon Aurora PostgreSQL（エクスプレス構成・IAM認証） |
 | ログイン | Amazon Cognito |
 | インフラ | AWS CDK（TypeScript） |
 | CI/CD | GitHub Actions（OIDCでAWSへ） |
