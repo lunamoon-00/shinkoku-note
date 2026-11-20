@@ -107,6 +107,7 @@ export class ShinkokuStack extends Stack {
     });
     apiFn.addToRolePolicy(dbConnect(DB_APP_USER));
     uploadsBucket.grantRead(apiFn, "receipts/*"); // レシート写真を見るための署名つきURLを作る
+    uploadsBucket.grantPut(apiFn, "csv/*"); // 取りこんだ CSV のもとのファイルをとっておく
 
     // ───────── LINE でレシートを受け取る（4a） ─────────
     // 鍵はパラメータストア（暗号化）から読む。読んでいい鍵だけを Lambda ごとに許す
@@ -167,6 +168,9 @@ export class ShinkokuStack extends Stack {
       }),
     });
     workerFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    // API も、CSV の明細の科目の候補を Gemini に聞く（4b）
+    apiFn.addToRolePolicy(readParams("/shinkoku/gemini/api-key"));
+    apiFn.addEnvironment("GEMINI_MODEL", "gemini-flash-latest");
     workerFn.addToRolePolicy(
       readParams("/shinkoku/line/channel-access-token", "/shinkoku/gemini/api-key"),
     );
@@ -239,6 +243,8 @@ export class ShinkokuStack extends Stack {
       ["/line", apigw.HttpMethod.GET],
       ["/line", apigw.HttpMethod.DELETE],
       ["/line/link-code", apigw.HttpMethod.POST],
+      ["/imports/csv", apigw.HttpMethod.POST],
+      ["/imports/{id}/commit", apigw.HttpMethod.POST],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });

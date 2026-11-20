@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import traceback
@@ -14,7 +15,7 @@ import pg8000.exceptions
 
 import os
 
-from . import db, ledger, receipts
+from . import csv_import, db, ledger, receipts
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -64,6 +65,25 @@ def _receipt_url(s3_key: str) -> str:
     )
 
 
+def _classify(descriptions, accounts):
+    """明細の内容から科目の候補を聞く。Gemini が止まっていても、取りこみは続けられるようにする"""
+    from . import gemini
+
+    try:
+        return gemini.classify_descriptions(descriptions, accounts)
+    except Exception:
+        traceback.print_exc()
+        return {}
+
+
+def _s3_store(key: str, body: bytes, content_type: str) -> None:
+    import boto3
+
+    boto3.client("s3").put_object(
+        Bucket=os.environ["UPLOADS_BUCKET"], Key=key, Body=body, ContentType=content_type, ServerSideEncryption="AES256"
+    )
+
+
 def route(con, user_id: str, event: dict):
     """どの窓口（ルート）かを見て、帳簿の関数を呼ぶ。戻り値は (状態コード, 中身)。"""
     key = event.get("routeKey", "")
@@ -96,6 +116,18 @@ def route(con, user_id: str, event: dict):
         if not s3_key:
             return 404, {"error": {"code": "NOT_FOUND", "message": "この記録にはレシートの写真がありません", "details": []}}
         return 200, {"url": _receipt_url(s3_key)}
+    if key == "POST /imports/csv":
+        body = _body(event)
+        try:
+            raw = base64.b64decode(str(body.get("content_base64", "")), validate=True)
+        except ValueError:
+            raise ledger.ValidationError("ファイルが読めませんでした") from None
+        return 200, csv_import.preview(
+            con, user_id, raw, str(body.get("source", "")),
+            filename=str(body.get("filename", "")), classifier=_classify, store=_s3_store,
+        )
+    if key == "POST /imports/{id}/commit":
+        return 200, csv_import.commit(con, user_id, path.get("id", ""), _body(event).get("rows"))
     if key == "GET /review":
         return 200, {"count": ledger.review_count(con)}
     if key == "GET /line":

@@ -4,7 +4,7 @@
 import { auth } from "./auth";
 import { config } from "./config";
 import { mockFetch } from "./mock-api";
-import type { Account, Entry, EntryInput, LineStatus, Profile, Summary } from "./types";
+import type { Account, CsvPreview, Entry, EntryInput, LineStatus, Profile, Summary } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -92,4 +92,8 @@ export const api = {
   lineStatus: () => request<LineStatus>("GET", "/line"),
   lineLinkCode: () => request<{ code: string; expires_in_minutes: number }>("POST", "/line/link-code"),
   unlinkLine: () => request<void>("DELETE", "/line"),
+  previewCsv: (filename: string, contentBase64: string, source: "personal" | "business") =>
+    request<CsvPreview>("POST", "/imports/csv", { filename, content_base64: contentBase64, source }),
+  commitCsv: (importId: string, rows: { row_id: number; include: boolean; account_code: string }[]) =>
+    request<{ created: number; skipped: number }>("POST", `/imports/${encodeURIComponent(importId)}/commit`, { rows }),
 };

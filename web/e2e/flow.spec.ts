@@ -152,3 +152,24 @@ test("レシートの確認待ち：写真を見て、科目を直して確定�
   await expect(page.getByText(/確認待ちが/)).toBeHidden();
   await expect(page.getByText("打ち合わせのお茶代")).toBeVisible();
 });
+
+test("CSVから取りこむ：仕事の分だけ選んで、科目を直して取りこむ", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/record/");
+  await page.getByText("銀行・カードのCSVからまとめて取りこむ").click();
+  await page.getByLabel("CSVファイル").setInputFiles({
+    name: "card.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("ご利用日,ご利用店名,ご利用金額\n2026/11/03,文房具店,1100\n2026/11/04,スーパー,2180\n"),
+  });
+  await page.getByRole("button", { name: "読みこむ" }).click();
+  await expect(page.getByRole("heading", { name: "仕事の分に✅をつけてね" })).toBeVisible();
+  await page.getByLabel(/スーパー .* を取りこむ/).uncheck();
+  await page.getByLabel("文房具店 の科目").selectOption({ label: "本・新聞・資料代（新聞図書費）" });
+  await page.getByRole("button", { name: /✅の1件を取りこむ/ }).click();
+  await expect(page.getByText("1件を記録しました")).toBeVisible();
+  await page.goto("/summary/");
+  await expect(page.getByText("本・新聞・資料代")).toBeVisible();
+  await expect(page.getByText("スーパー")).toBeHidden();
+});
