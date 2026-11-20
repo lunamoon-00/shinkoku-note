@@ -1,14 +1,10 @@
-// 申告ノートの本体：ログイン・DB・ファイル置き場・画面の配信。
+// 申告ノートの本体：ログイン・DB・ファイル置き場。（画面の配信は web-stack.ts）
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
-import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import type { Construct } from "constructs";
-import { fileURLToPath } from "node:url";
 
 export class ShinkokuStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -74,33 +70,7 @@ export class ShinkokuStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN, // 大事な証拠なので、スタックを消しても残す
     });
 
-    // ───────── 画面の配信（S3 + CloudFront） ─────────
-    const webBucket = new s3.Bucket(this, "WebBucket", {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, // 直接は見せず、CloudFront経由だけ
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      enforceSSL: true,
-      removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true, // 画面はいつでも作り直せるので消してOK
-    });
-
-    const distribution = new cloudfront.Distribution(this, "WebDistribution", {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-      },
-      defaultRootObject: "index.html",
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_200, // 日本を含む地域だけ（いちばん高い地域は除く）
-    });
-
-    // Phase 3 で本物の画面に置きかえるまでの「準備中」ページ
-    new s3deploy.BucketDeployment(this, "PlaceholderPage", {
-      sources: [s3deploy.Source.asset(fileURLToPath(new URL("../placeholder", import.meta.url)))],
-      destinationBucket: webBucket,
-      distribution,
-    });
-
     // ───────── 次の Phase で使う値を表示 ─────────
-    new CfnOutput(this, "WebUrl", { value: `https://${distribution.distributionDomainName}` });
     new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
     new CfnOutput(this, "DbClusterArn", { value: db.clusterArn });
