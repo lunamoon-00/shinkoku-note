@@ -2,7 +2,7 @@
 // データはタブを閉じるまで残る（sessionStorage）。
 
 import accountsJson from "./mock-accounts.json";
-import type { Account, Entry, EntryInput, Profile } from "./types";
+import type { Account, CsvRow, Entry, EntryInput, Profile } from "./types";
 
 const accounts = accountsJson as Account[];
 const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -11,6 +11,7 @@ interface Db {
   profile: Profile;
   entries: Entry[];
   lineLinked?: boolean;
+  imports?: Record<string, { source: string; rows: CsvRow[]; done: boolean }>;
 }
 
 const KEY = "shinkoku-mock-db";
@@ -95,7 +96,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
   }
   const url = new URL(path, "http://mock");
   const db = load();
-  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}")}`;
+  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}")}`;
   const status = url.searchParams.get("status");
   const id = decodeURIComponent(url.pathname.split("/")[2] ?? "");
   const year = Number(url.searchParams.get("year") ?? new Date().getFullYear());
@@ -152,6 +153,63 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       db.entries = db.entries.filter((e) => e.id !== id);
       save(db);
       return json(204, null);
+    }
+    case "POST /imports/csv": {
+      // お試しモードの簡単な読み取り（本物は api/shinkoku/csv_import.py）
+      const b = body as { content_base64: string; source: string };
+      const bytes = Uint8Array.from(atob(b.content_base64), (c) => c.charCodeAt(0));
+      let text: string;
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {
+        text = new TextDecoder("shift_jis").decode(bytes);
+      }
+      const lines = text.split(/\r?\n/).filter((l) => l.trim()).map((l) => l.split(","));
+      const header = lines[0] ?? [];
+      const col = (...words: string[]) => header.findIndex((h) => words.some((w) => h.includes(w)));
+      const dateCol = col("日付", "利用日", "取引日");
+      const descCol = col("店名", "摘要", "内容");
+      const outCol = col("支払", "利用金額", "出金");
+      const inCol = col("預り", "入金");
+      if (dateCol < 0 || descCol < 0 || (outCol < 0 && inCol < 0)) {
+        return fail(400, "VALIDATION", "日付・内容・金額の列が見つかりませんでした。銀行やカードのサイトから書き出した CSV か確かめてね");
+      }
+      const rows: CsvRow[] = lines.slice(1).flatMap((r, i) => {
+        const date = (r[dateCol] ?? "").replace(/\//g, "-");
+        const out = Number(r[outCol] ?? 0) || 0;
+        const inn = Number(r[inCol] ?? 0) || 0;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (!out && !inn)) return [];
+        const direction = out ? "out" : "in";
+        return [{
+          row_id: i + 1, date, description: r[descCol] ?? "", amount: out || inn, direction,
+          account_code: direction === "out" ? "5190" : "4100", include: direction === "out" || b.source === "business",
+          duplicate: false, reason: direction === "out" ? "AI のおすすめ（仕事っぽい）" : "入ってきたお金。仕事の報酬なら✅をつけてね",
+        } as CsvRow];
+      });
+      const importId = crypto.randomUUID();
+      db.imports = { ...(db.imports ?? {}), [importId]: { source: b.source, rows, done: false } };
+      save(db);
+      return json(200, { import_id: importId, source: b.source, rows });
+    }
+    case "POST /imports/{id}/commit": {
+      const imp = db.imports?.[id];
+      if (!imp) return fail(404, "NOT_FOUND", "見つかりませんでした");
+      if (imp.done) return fail(400, "VALIDATION", "このCSVはもう取りこみ済みです");
+      const choices = (body as { rows: { row_id: number; include: boolean; account_code: string }[] }).rows;
+      let created = 0;
+      for (const c of choices) {
+        const row = imp.rows.find((r) => r.row_id === c.row_id);
+        if (!row || !c.include) continue;
+        const from = imp.source === "business" ? "1200" : row.direction === "out" ? "2900" : "1900";
+        const lines = row.direction === "out"
+          ? [{ side: "debit" as const, account_code: c.account_code, amount: row.amount }, { side: "credit" as const, account_code: from, amount: row.amount }]
+          : [{ side: "debit" as const, account_code: from, amount: row.amount }, { side: "credit" as const, account_code: c.account_code, amount: row.amount }];
+        db.entries.push({ ...toEntry(crypto.randomUUID(), { entry_date: row.date, description: "", partner: row.description, status: "confirmed", lines }), source: "csv" });
+        created++;
+      }
+      imp.done = true;
+      save(db);
+      return json(200, { created, skipped: choices.length - created });
     }
     case "GET /review":
       return json(200, { count: db.entries.filter((e) => e.status === "draft").length });

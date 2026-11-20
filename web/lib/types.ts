@@ -75,3 +75,21 @@ export interface LineStatus {
   linked: boolean;
   linked_at: string | null;
 }
+
+export interface CsvRow {
+  row_id: number;
+  date: string;
+  description: string;
+  amount: number;
+  direction: "in" | "out";
+  account_code: string;
+  include: boolean;
+  duplicate: boolean;
+  reason: string;
+}
+
+export interface CsvPreview {
+  import_id: string;
+  source: "personal" | "business";
+  rows: CsvRow[];
+}
