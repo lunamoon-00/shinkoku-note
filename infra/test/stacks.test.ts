@@ -67,7 +67,10 @@ describe("本体スタック", () => {
 
 describe("GitHub 用のスタック", () => {
   const template = Template.fromStack(
-    new GithubOidcStack(new App(), "TestOidc", { env, repository: "lunamoon-00/shinkoku-note" }),
+    new GithubOidcStack(new App(), "TestOidc", {
+      env,
+      subjectPrefix: "repo:lunamoon-00@204539346/shinkoku-note@1465897294",
+    }),
   );
 
   it("このリポジトリの main ブランチからだけ入れる", () => {
@@ -79,7 +82,7 @@ describe("GitHub 用のスタック", () => {
               StringEquals: {
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
                 "token.actions.githubusercontent.com:sub":
-                  "repo:lunamoon-00/shinkoku-note:ref:refs/heads/main",
+                  "repo:lunamoon-00@204539346/shinkoku-note@1465897294:ref:refs/heads/main",
               },
             },
           }),
