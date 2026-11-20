@@ -6,6 +6,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { EntryEditor } from "@/components/entry-editor";
+import { ReceiptPhoto } from "@/components/receipt-photo";
 import { RequireSession } from "@/components/session";
 import { Button, ButtonLink, Card, Notice, PageTitle, Spinner } from "@/components/ui";
 import { useLoad } from "@/components/use-load";
@@ -71,13 +72,15 @@ function Edit() {
       <PageTitle title="記録を直す" lead={`${dateLabel(entry.entry_date)}の記録`} />
       {entry.status === "draft" && (
         <Notice tone="warn" title="確認待ちの記録です">
-          中身が合っていれば「確定する」を押してください。確定するまで、集計には入りません
+          中身が合っていれば「確定する」を押してください。確定するまで、集計には入りません。
+          {entry.source === "receipt" && "科目を直して保存すると、次からそのお店は自動でその科目にします"}
           <div className="mt-3">
             <Button onClick={() => void confirm()} loading={busy === "confirm"}>確定する</Button>
           </div>
         </Notice>
       )}
       {error && <Notice tone="danger" title="うまくいきませんでした">{error}</Notice>}
+      {entry.has_receipt && <ReceiptPhoto entryId={entry.id} />}
 
       <EntryEditor
         key={entry.updated_at}
@@ -86,7 +89,8 @@ function Edit() {
         allowKindChange={initial.kind !== "advanced"}
         submitLabel="直した内容で保存する"
         onSubmit={async (input) => {
-          await api.updateEntry(entry.id, { ...input, status: entry.status });
+          // 確認待ちのものを直して保存したら、確定もする（本人が中身を見たので）
+          await api.updateEntry(entry.id, { ...input, status: "confirmed" });
           router.push("/entries/?saved=1");
         }}
       />

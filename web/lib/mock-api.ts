@@ -10,6 +10,7 @@ const byCode = new Map(accounts.map((a) => [a.code, a]));
 interface Db {
   profile: Profile;
   entries: Entry[];
+  lineLinked?: boolean;
 }
 
 const KEY = "shinkoku-mock-db";
@@ -75,6 +76,7 @@ function toEntry(id: string, input: EntryInput, prev?: Entry): Entry {
     updated_at: now,
     lines,
     total: lines.filter((l) => l.side === "debit").reduce((s, l) => s + l.amount, 0),
+    has_receipt: prev?.has_receipt ?? false,
   };
 }
 
@@ -94,6 +96,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
   const url = new URL(path, "http://mock");
   const db = load();
   const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}")}`;
+  const status = url.searchParams.get("status");
   const id = decodeURIComponent(url.pathname.split("/")[2] ?? "");
   const year = Number(url.searchParams.get("year") ?? new Date().getFullYear());
   const find = () => db.entries.find((e) => e.id === id);
@@ -112,7 +115,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
     case "GET /entries":
       return json(200, {
         entries: db.entries
-          .filter((e) => e.entry_date.startsWith(`${year}-`))
+          .filter((e) => e.entry_date.startsWith(`${year}-`) && (!status || e.status === status))
           .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at)),
       });
     case "POST /entries": {
@@ -149,6 +152,24 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       db.entries = db.entries.filter((e) => e.id !== id);
       save(db);
       return json(204, null);
+    }
+    case "GET /review":
+      return json(200, { count: db.entries.filter((e) => e.status === "draft").length });
+    case "GET /line":
+      return json(200, { linked: !!db.lineLinked, linked_at: db.lineLinked ? new Date().toISOString() : null });
+    case "POST /line/link-code":
+      // お試しモードでは、番号を出したら「つながった」ことにする
+      db.lineLinked = true;
+      save(db);
+      return json(200, { code: "123456", expires_in_minutes: 10 });
+    case "DELETE /line":
+      db.lineLinked = false;
+      save(db);
+      return json(204, null);
+    case "GET /entries/{id}/receipt": {
+      const e = find();
+      if (!e?.has_receipt) return fail(404, "NOT_FOUND", "この記録にはレシートの写真がありません");
+      return json(200, { url: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="#fff"/><text x="150" y="200" text-anchor="middle" font-size="20">レシート（お試し）</text></svg>') });
     }
     case "GET /summary": {
       const totals = new Map<string, number>();

@@ -45,6 +45,7 @@ export interface Entry {
   updated_at: string;
   lines: EntryLine[];
   total: number;
+  has_receipt: boolean;
 }
 
 export interface Summary {
@@ -68,4 +69,9 @@ export interface Profile {
   mode: "freee" | "in_app";
   business_name: string;
   onboarded: boolean;
+}
+
+export interface LineStatus {
+  linked: boolean;
+  linked_at: string | null;
 }

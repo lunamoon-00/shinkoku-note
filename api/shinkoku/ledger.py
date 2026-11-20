@@ -10,6 +10,7 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass, field
 
+import pg8000.exceptions
 import pg8000.native
 
 MAX_AMOUNT = 10_000_000_000  # 100億円。打ちまちがい防止の上限
@@ -186,7 +187,7 @@ def _check_uuid(entry_id: str) -> str:
 def get_entry(con: pg8000.native.Connection, entry_id: str) -> dict:
     entry_id = _check_uuid(entry_id)
     rows = con.run(
-        "select id, entry_date, description, partner, status, source, created_at, updated_at"
+        "select id, entry_date, description, partner, status, source, created_at, updated_at, import_file_id"
         " from journal_entries where id = cast(:id as uuid)",
         id=entry_id,
     )
@@ -200,7 +201,7 @@ def list_entries(con: pg8000.native.Connection, year: int, status: str | None = 
     if status is not None and status not in STATUSES:
         raise ValidationError("状態は draft（下書き）か confirmed（確定）です")
     rows = con.run(
-        "select id, entry_date, description, partner, status, source, created_at, updated_at"
+        "select id, entry_date, description, partner, status, source, created_at, updated_at, import_file_id"
         " from journal_entries"
         " where entry_date >= make_date(:y, 1, 1) and entry_date < make_date(:y + 1, 1, 1)"
         "   and (cast(:st as text) is null or status = cast(:st as text))"
@@ -238,6 +239,7 @@ def _with_lines(con: pg8000.native.Connection, rows: list) -> list[dict]:
                 "source": r[5],
                 "created_at": r[6].isoformat(),
                 "updated_at": r[7].isoformat(),
+                "has_receipt": r[8] is not None,
                 "lines": lines_by_entry[eid],
                 "total": sum(line["amount"] for line in lines_by_entry[eid] if line["side"] == "debit"),
             }
@@ -312,3 +314,58 @@ def update_profile(con: pg8000.native.Connection, user_id: str, payload: dict) -
     )
     _audit(con, user_id, "profile.update", user_id)
     return get_profile(con, user_id)
+
+
+# ───────── LINE とのひも付け ─────────
+LINK_CODE_MINUTES = 10
+
+
+def create_line_link_code(con: pg8000.native.Connection, user_id: str) -> dict:
+    """LINE で送ってもらう6けたの番号を作る（10分で期限切れ。出しなおすと前の番号は消える）"""
+    import secrets as pysecrets
+
+    con.run("delete from line_link_codes where user_id = :u", u=user_id)
+    for _ in range(5):  # たまたま他の人と同じ番号になったら作りなおす
+        code = f"{pysecrets.randbelow(1_000_000):06d}"
+        try:
+            con.run("savepoint pick_code")
+            con.run(
+                "insert into line_link_codes (code, user_id, expires_at)"
+                " values (:c, :u, now() + make_interval(mins => :m))",
+                c=code, u=user_id, m=LINK_CODE_MINUTES,
+            )
+            con.run("release savepoint pick_code")
+            return {"code": code, "expires_in_minutes": LINK_CODE_MINUTES}
+        except pg8000.exceptions.DatabaseError:
+            con.run("rollback to savepoint pick_code")
+    raise RuntimeError("番号を作れませんでした")
+
+
+def line_status(con: pg8000.native.Connection) -> dict:
+    rows = con.run("select linked_at from line_links")
+    return {"linked": bool(rows), "linked_at": rows[0][0].isoformat() if rows else None}
+
+
+def unlink_line(con: pg8000.native.Connection, user_id: str) -> None:
+    con.run("delete from line_links")
+    _audit(con, user_id, "line.unlink", user_id)
+
+
+# ───────── レシートの写真 ─────────
+def receipt_key(con: pg8000.native.Connection, entry_id: str) -> str | None:
+    """記録についているレシート写真の保存場所（S3 のキー）。なければ None"""
+    entry_id = _check_uuid(entry_id)
+    rows = con.run(
+        "select f.s3_key from journal_entries e join import_files f on f.id = e.import_file_id"
+        " where e.id = cast(:id as uuid)",
+        id=entry_id,
+    )
+    if not rows:
+        get_entry(con, entry_id)  # 記録そのものがなければ NotFound
+        return None
+    return rows[0][0] or None
+
+
+def review_count(con: pg8000.native.Connection) -> int:
+    """確認待ち（下書き）の件数"""
+    return con.run("select count(*) from journal_entries where status = 'draft'")[0][0]

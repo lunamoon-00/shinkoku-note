@@ -21,3 +21,9 @@ grant select, insert, update, delete on journal_entries, journal_lines to shinko
 grant select, insert on audit_logs to shinkoku_app;
 grant select on account_totals to shinkoku_app;
 grant usage on all sequences in schema public to shinkoku_app;
+
+-- 0004: LINE・取りこみ・覚えた科目
+grant select, insert, update, delete on line_links, line_link_codes, partner_rules to shinkoku_app;
+grant select, insert, update on import_files to shinkoku_app;
+grant execute on function line_link_by_code(text, text) to shinkoku_app;
+grant execute on function line_user_lookup(text) to shinkoku_app;

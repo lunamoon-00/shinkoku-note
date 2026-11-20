@@ -4,7 +4,7 @@
 import { auth } from "./auth";
 import { config } from "./config";
 import { mockFetch } from "./mock-api";
-import type { Account, Entry, EntryInput, Profile, Summary } from "./types";
+import type { Account, Entry, EntryInput, LineStatus, Profile, Summary } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -79,11 +79,17 @@ export const api = {
   me: () => request<Profile>("GET", "/me"),
   updateMe: (patch: Partial<Profile>) => request<Profile>("PUT", "/me", patch),
   accounts: () => request<{ accounts: Account[] }>("GET", "/accounts").then((r) => r.accounts),
-  entries: (year: number) => request<{ entries: Entry[] }>("GET", `/entries?year=${year}`).then((r) => r.entries),
+  entries: (year: number, status?: "draft" | "confirmed") =>
+    request<{ entries: Entry[] }>("GET", `/entries?year=${year}${status ? `&status=${status}` : ""}`).then((r) => r.entries),
   entry: (id: string) => request<Entry>("GET", `/entries/${encodeURIComponent(id)}`),
   createEntry: (input: EntryInput) => request<Entry>("POST", "/entries", input),
   updateEntry: (id: string, input: EntryInput) => request<Entry>("PUT", `/entries/${encodeURIComponent(id)}`, input),
   confirmEntry: (id: string) => request<Entry>("POST", `/entries/${encodeURIComponent(id)}/confirm`),
   deleteEntry: (id: string) => request<void>("DELETE", `/entries/${encodeURIComponent(id)}`),
   summary: (year: number) => request<Summary>("GET", `/summary?year=${year}`),
+  receiptUrl: (id: string) => request<{ url: string }>("GET", `/entries/${encodeURIComponent(id)}/receipt`).then((r) => r.url),
+  reviewCount: () => request<{ count: number }>("GET", "/review").then((r) => r.count),
+  lineStatus: () => request<LineStatus>("GET", "/line"),
+  lineLinkCode: () => request<{ code: string; expires_in_minutes: number }>("POST", "/line/link-code"),
+  unlinkLine: () => request<void>("DELETE", "/line"),
 };

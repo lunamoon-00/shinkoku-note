@@ -17,8 +17,8 @@ function Home() {
   const { profile } = useSession();
   const year = new Date().getFullYear();
   const [state, reload] = useLoad(async () => {
-    const [summary, entries] = await Promise.all([api.summary(year), api.entries(year)]);
-    return { summary, recent: [...entries].reverse().slice(0, 5), count: entries.length };
+    const [summary, entries, review] = await Promise.all([api.summary(year), api.entries(year), api.reviewCount()]);
+    return { summary, recent: [...entries].reverse().slice(0, 5), count: entries.length, review };
   }, year);
 
   return (
@@ -39,6 +39,16 @@ function Home() {
       )}
       {state.status === "ready" && (
         <>
+          {state.data.review > 0 && (
+            <Link href="/entries/?status=draft" className="flex items-center gap-3 rounded-[var(--radius-card)] bg-warn-soft p-4 shadow-card transition hover:brightness-[0.98]">
+              <span aria-hidden className="text-2xl">📝</span>
+              <span className="flex-1">
+                <span className="block font-bold">確認待ちが {state.data.review}件 あります</span>
+                <span className="block text-sm text-sub">レシートから下書きにしたものです。中身を見て確定してね</span>
+              </span>
+              <span aria-hidden className="text-sub">›</span>
+            </Link>
+          )}
           <Card>
             <p className="text-sm font-bold text-sub">
               もうけの目安（売上 − 経費）

@@ -14,7 +14,7 @@ const balanced = (input: ReturnType<typeof toEntryInput>) => {
 };
 const asEntry = (input: ReturnType<typeof toEntryInput>): Entry => ({
   id: "x", entry_date: input.entry_date, description: input.description, partner: input.partner, status: input.status,
-  source: "manual", created_at: "", updated_at: "", total: 0,
+  source: "manual", created_at: "", updated_at: "", total: 0, has_receipt: false,
   lines: input.lines.map((l) => ({ ...l, account_name: "", friendly_name: accounts.find((a) => a.code === l.account_code)!.friendly_name })),
 });
 

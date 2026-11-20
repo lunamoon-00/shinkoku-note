@@ -38,12 +38,30 @@ describe("本体スタック", () => {
     });
   });
 
-  it("API はすべてログインが必要（Cognito のトークンを確かめる）", () => {
-    const routes = template.findResources("AWS::ApiGatewayV2::Route");
-    expect(Object.keys(routes).length).toBe(10);
-    for (const route of Object.values(routes)) {
-      expect(route.Properties.AuthorizationType).toBe("JWT");
+  it("API は LINE の入口以外すべてログインが必要（Cognito のトークンを確かめる）", () => {
+    const routes = Object.values(template.findResources("AWS::ApiGatewayV2::Route"));
+    expect(routes.length).toBe(16);
+    for (const route of routes) {
+      const expected = route.Properties.RouteKey === "POST /line/webhook" ? "NONE" : "JWT";
+      expect([route.Properties.RouteKey, route.Properties.AuthorizationType ?? "NONE"]).toEqual([route.Properties.RouteKey, expected]);
     }
+  });
+
+  it("レシートの読み取りは3回失敗したら失敗の置き場（DLQ）へ", () => {
+    template.hasResourceProperties("AWS::SQS::Queue", {
+      RedrivePolicy: Match.objectLike({ maxReceiveCount: 3 }),
+    });
+    template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+      BatchSize: 1,
+      FunctionResponseTypes: ["ReportBatchItemFailures"],
+    });
+  });
+
+  it("鍵はパラメータストアの決まった名前だけ読める", () => {
+    const policies = JSON.stringify(template.findResources("AWS::IAM::Policy"));
+    expect(policies).toContain("parameter/shinkoku/line/channel-secret");
+    expect(policies).toContain("parameter/shinkoku/gemini/api-key");
+    expect(policies).not.toContain("parameter/*");
   });
 
   it("API は呼ばれすぎないように速さの上限がある", () => {
@@ -56,7 +74,7 @@ describe("本体スタック", () => {
     const fns = template.findResources("AWS::Lambda::Function", {
       Properties: { Runtime: "python3.13" },
     });
-    expect(Object.keys(fns).length).toBe(2); // API とマイグレーション
+    expect(Object.keys(fns).length).toBe(4); // API・マイグレーション・LINEの受け取り係・読み取り係
     for (const fn of Object.values(fns)) {
       expect(fn.Properties.Architectures).toEqual(["arm64"]);
     }
