@@ -1,14 +1,15 @@
-# AWS の設定（infra/）の自動チェックと自動公開。
+# AWS の設定（infra/）と API のコード（api/）の自動チェックと自動公開。
+# API のコードは Lambda にまとめて載せるので、api/ が変わったときも動く。
 # - PR を出したとき・main に入ったとき：型チェック → テスト → テンプレート作成
 # - main に入ったときだけ：チェックが通ったら AWS に反映（鍵なし＝OIDC）
 name: infra
 
 on:
   pull_request:
-    paths: ["infra/**", ".github/workflows/infra.yml"]
+    paths: ["infra/**", "api/**", ".github/workflows/infra.yml"]
   push:
     branches: [main]
-    paths: ["infra/**", ".github/workflows/infra.yml"]
+    paths: ["infra/**", "api/**", ".github/workflows/infra.yml"]
   workflow_dispatch: # 手動でも動かせる
 
 # 公開が同時に2つ走らないようにする
@@ -32,6 +33,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: infra/package-lock.json
+      - uses: actions/setup-python@v7 # Lambda のコードをまとめるときに使う
+        with:
+          python-version: "3.13"
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -52,6 +56,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: infra/package-lock.json
+      - uses: actions/setup-python@v7 # Lambda のコードをまとめるときに使う
+        with:
+          python-version: "3.13"
       - run: npm ci
       - name: AWS に鍵なしで入る
         uses: aws-actions/configure-aws-credentials@v6
