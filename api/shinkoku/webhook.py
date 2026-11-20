@@ -38,7 +38,8 @@ def _enqueue(message: dict) -> None:
     boto3.client("sqs").send_message(QueueUrl=os.environ["RECEIPT_QUEUE_URL"], MessageBody=json.dumps(message))
 
 
-def handle_event(con, ev: dict, enqueue=_enqueue) -> None:
+def handle_event(con_factory, ev: dict, enqueue=_enqueue) -> None:
+    """con_factory は DB の接続を返す関数。DB が要るとき（番号でつなぐとき）だけ呼ぶ"""
     source = ev.get("source", {})
     line_user_id = source.get("userId")
     reply_token = ev.get("replyToken")
@@ -56,7 +57,14 @@ def handle_event(con, ev: dict, enqueue=_enqueue) -> None:
         typed = re.sub(r"\s", "", str(message.get("text", "")))
         typed = typed.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
         if re.fullmatch(r"\d{6}", typed):
-            user_id = con.run("select line_link_by_code(:c, :l)", c=typed, l=line_user_id)[0][0]
+            con = con_factory()
+            con.run("begin")
+            try:
+                user_id = con.run("select line_link_by_code(:c, :l)", c=typed, l=line_user_id)[0][0]
+                con.run("commit")
+            except BaseException:
+                con.run("rollback")
+                raise
             if user_id:
                 line.reply(reply_token, [line.text("✅ アプリとつながったよ！\nこれからはレシートの写真を送るだけで記録するね")])
             else:
@@ -66,15 +74,12 @@ def handle_event(con, ev: dict, enqueue=_enqueue) -> None:
         return
 
     if message.get("type") in ("image", "file"):
-        user_id = con.run("select line_user_lookup(:l)", l=line_user_id)[0][0]
-        if not user_id:
-            line.reply(reply_token, [line.text("まだアプリとつながっていないみたい。\n" + HELP)])
-            return
+        # ここでは DB にさわらない（DB が寝ていると起きるまで30秒かかり、LINE が待ちきれないため）。
+        # だれの写真かを調べるのは、時間に余裕のある読み取り係にまかせる
         if message.get("type") == "file" and not str(message.get("fileName", "")).lower().endswith((".jpg", ".jpeg", ".png")):
             line.reply(reply_token, [line.text("写真（JPEG・PNG）で送ってね")])
             return
         enqueue({
-            "user_id": user_id,
             "line_user_id": line_user_id,
             "message_id": message["id"],
             "reply_token": reply_token,
@@ -92,15 +97,11 @@ def handler(event, context):  # Lambda の入口（API Gateway の POST /line/we
         return {"statusCode": 401, "body": "bad signature"}  # 本物の LINE からではない
 
     payload = json.loads(body or b"{}")
-    con = db.shared_connection()
-    for ev in payload.get("events", []):
+    for ev in payload.get("events", []):  # LINE の「検証」は events が空なので、すぐ 200 を返す
         if ev.get("deliveryContext", {}).get("isRedelivery"):
             continue  # 送りなおし分は、もう受け取っている
         try:
-            con.run("begin")
-            handle_event(con, ev)
-            con.run("commit")
+            handle_event(db.shared_connection, ev)
         except Exception:
-            con.run("rollback")
             traceback.print_exc()  # 1件の失敗で、ほかの通知を止めない
     return _ok()
