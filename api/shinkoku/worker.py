@@ -34,14 +34,31 @@ def _s3_store(key: str, body: bytes, content_type: str) -> None:
     )
 
 
+NOT_LINKED = (
+    "まだアプリとつながっていないみたい。\n"
+    "アプリの「設定」→「LINEとつなぐ」で出る6けたの番号を、ここに送ってね"
+)
+
+
 def process(msg: dict, store=_s3_store, reader=gemini.read_receipt) -> receipts.Outcome:
+    con = db.shared_connection()
+    # LINE の利用者番号から、アプリの利用者を引く（つながっていなければ写真は取りにいかない）
+    con.run("begin")
+    try:
+        user_id = con.run("select line_user_lookup(:l)", l=msg["line_user_id"])[0][0]
+        con.run("commit")
+    except BaseException:
+        con.run("rollback")
+        raise
+    if not user_id:
+        return receipts.Outcome("not_linked", NOT_LINKED)
+
     image = line.get_content(msg["message_id"])
     mime = mime_of(image)
     if not mime:
         return receipts.Outcome("not_receipt", "写真の形式が読めませんでした。JPEG か PNG で送ってね")
-    con = db.shared_connection()
-    with db.as_user(con, msg["user_id"]):
-        return receipts.process_receipt(con, msg["user_id"], image, mime, via="line", store=store, reader=reader)
+    with db.as_user(con, user_id):
+        return receipts.process_receipt(con, user_id, image, mime, via="line", store=store, reader=reader)
 
 
 def handler(event, context):  # Lambda の入口（SQS）

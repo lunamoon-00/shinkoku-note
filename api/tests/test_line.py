@@ -77,9 +77,7 @@ def test_本物の通知には200を返す(app_con, monkeypatch):
 def link(app_con, fake_line, user=ALICE, line_user=LINE_ALICE):
     with db.as_user(app_con, user):
         code = ledger.create_line_link_code(app_con, user)["code"]
-    app_con.run("begin")
-    webhook.handle_event(app_con, text_event(f" {code} ", user=line_user))
-    app_con.run("commit")
+    webhook.handle_event(lambda: app_con, text_event(f" {code} ", user=line_user))
     return code
 
 
@@ -94,9 +92,7 @@ def test_6けたの番号を送るとつながる(app_con, fake_line):
 
 def test_番号は1回しか使えない(app_con, fake_line):
     code = link(app_con, fake_line)
-    app_con.run("begin")
-    webhook.handle_event(app_con, text_event(code, user="U" + "b" * 32))
-    app_con.run("commit")
+    webhook.handle_event(lambda: app_con, text_event(code, user="U" + "b" * 32))
     assert "番号がちがうか" in replies(fake_line)[-1]
 
 
@@ -104,9 +100,7 @@ def test_期限切れの番号は使えない(app_con, fake_line, database):
     with db.as_user(app_con, ALICE):
         code = ledger.create_line_link_code(app_con, ALICE)["code"]
     database.run("update line_link_codes set expires_at = now() - interval '1 minute'")
-    app_con.run("begin")
-    webhook.handle_event(app_con, text_event(code))
-    app_con.run("commit")
+    webhook.handle_event(lambda: app_con, text_event(code))
     assert "期限" in replies(fake_line)[-1]
 
 
@@ -114,9 +108,7 @@ def test_全角の番号でもOK(app_con, fake_line):
     with db.as_user(app_con, ALICE):
         code = ledger.create_line_link_code(app_con, ALICE)["code"]
     zenkaku = code.translate(str.maketrans("0123456789", "０１２３４５６７８９"))
-    app_con.run("begin")
-    webhook.handle_event(app_con, text_event(zenkaku))
-    app_con.run("commit")
+    webhook.handle_event(lambda: app_con, text_event(zenkaku))
     assert "つながったよ" in replies(fake_line)[-1]
 
 
@@ -128,30 +120,40 @@ def test_つなぎを外せる(app_con, fake_line):
 
 
 # ───────── 写真 ─────────
-def test_つないでいない人の写真は受け取らない(app_con, fake_line):
+def test_写真はDBにさわらず_すぐ待ち行列に入れる(fake_line):
+    def no_db():
+        raise AssertionError("受け取り係は写真のときに DB にさわってはいけない")
+
     queued = []
-    app_con.run("begin")
-    webhook.handle_event(app_con, image_event(), enqueue=queued.append)
-    app_con.run("commit")
-    assert queued == []
-    assert "つながっていない" in replies(fake_line)[-1]
+    webhook.handle_event(no_db, image_event(), enqueue=queued.append)
+    assert queued == [{"line_user_id": LINE_ALICE, "message_id": "m2", "reply_token": "r2", "webhook_event_id": None}]
 
 
-def test_つないだ人の写真は待ち行列に入れる(app_con, fake_line):
-    link(app_con, fake_line)
-    queued = []
-    app_con.run("begin")
-    webhook.handle_event(app_con, image_event(), enqueue=queued.append)
-    app_con.run("commit")
-    assert queued == [{"user_id": ALICE, "line_user_id": LINE_ALICE, "message_id": "m2", "reply_token": "r2", "webhook_event_id": None}]
+def test_LINEの検証では_DBにさわらず200を返す(monkeypatch):
+    def no_db(*a, **k):
+        raise AssertionError("DB にさわってはいけない")
+
+    monkeypatch.setattr(db, "shared_connection", no_db)
+    body = b'{"destination":"x","events":[]}'
+    res = webhook.handler({"body": body.decode(), "headers": {"x-line-signature": sign(body)}}, None)
+    assert res["statusCode"] == 200
+
+
+def test_つないでいない人の写真は_読み取り係が断る(app_con, fake_line, monkeypatch):
+    monkeypatch.setattr(db, "shared_connection", lambda *a, **k: app_con)
+    out = worker.process({"line_user_id": "U" + "z" * 32, "message_id": "m2", "reply_token": "r2"},
+                         store=lambda *a: None, reader=lambda *_: {})
+    assert out.status == "not_linked"
+    assert not any(url.endswith("/content") for _, url, _ in fake_line)  # 写真は取りにいかない
 
 
 def test_読み取り係が記録してLINEに返事する(app_con, fake_line, monkeypatch):
+    link(app_con, fake_line)
     monkeypatch.setattr(db, "shared_connection", lambda *a, **k: app_con)
     ai = {"is_receipt": True, "date": "2026-11-20", "total": 500, "store": "書店", "items": "本",
           "account_code": "5210", "confidence": 0.9, "tax_8": 0, "tax_10": 500, "invoice_number": "", "unclear": ""}
     stored = {}
-    msg = {"user_id": ALICE, "line_user_id": LINE_ALICE, "message_id": "m2", "reply_token": "r2"}
+    msg = {"line_user_id": LINE_ALICE, "message_id": "m2", "reply_token": "r2"}
     out = worker.process(msg, store=lambda k, b, m: stored.update({k: b}), reader=lambda *_: ai)
     assert out.status == "auto_confirmed"
     assert len(stored) == 1
