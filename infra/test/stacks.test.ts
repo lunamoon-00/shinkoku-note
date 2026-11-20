@@ -5,6 +5,7 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { GithubOidcStack } from "../lib/github-oidc-stack.js";
 import { ShinkokuStack } from "../lib/shinkoku-stack.js";
+import { WebStack } from "../lib/web-stack.js";
 
 const env = { account: "123456789012", region: "ap-southeast-2" };
 
@@ -38,7 +39,7 @@ describe("本体スタック", () => {
 
   it("S3 はすべて外から見えない", () => {
     const buckets = template.findResources("AWS::S3::Bucket");
-    expect(Object.keys(buckets).length).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(buckets).length).toBeGreaterThanOrEqual(1);
     for (const bucket of Object.values(buckets)) {
       expect(bucket.Properties.PublicAccessBlockConfiguration).toEqual({
         BlockPublicAcls: true,
@@ -55,6 +56,10 @@ describe("本体スタック", () => {
       Properties: Match.objectLike({ VersioningConfiguration: { Status: "Enabled" } }),
     });
   });
+});
+
+describe("画面のスタック", () => {
+  const template = Template.fromStack(new WebStack(new App(), "TestWeb", { env }));
 
   it("画面は HTTPS だけで配る", () => {
     template.hasResourceProperties("AWS::CloudFront::Distribution", {
@@ -62,6 +67,22 @@ describe("本体スタック", () => {
         DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
       }),
     });
+  });
+
+  it("画面の置き場も外から直接は見えない（CloudFront経由だけ）", () => {
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      PublicAccessBlockConfiguration: {
+        BlockPublicAcls: true,
+        BlockPublicPolicy: true,
+        IgnorePublicAcls: true,
+        RestrictPublicBuckets: true,
+      },
+    });
+  });
+
+  it("本体スタックには CloudFront を入れない（アカウント確認前でも反映できるように）", () => {
+    const main = Template.fromStack(new ShinkokuStack(new App(), "TestMain", { env }));
+    main.resourceCountIs("AWS::CloudFront::Distribution", 0);
   });
 });
 

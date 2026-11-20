@@ -2,6 +2,7 @@
 import { App, Tags } from "aws-cdk-lib";
 import { GithubOidcStack } from "../lib/github-oidc-stack.js";
 import { ShinkokuStack } from "../lib/shinkoku-stack.js";
+import { WebStack } from "../lib/web-stack.js";
 
 const app = new App();
 
@@ -19,7 +20,13 @@ new GithubOidcStack(app, "ShinkokuGithubOidc", {
 
 new ShinkokuStack(app, "Shinkoku", {
   env,
-  description: "申告ノート: ログイン・DB・ファイル置き場・画面の配信",
+  description: "申告ノート: ログイン・DB・ファイル置き場",
+});
+
+// 画面の配信。AWSアカウントの確認が終わってから反映する（CloudFrontの制限のため）
+new WebStack(app, "ShinkokuWeb", {
+  env,
+  description: "申告ノート: 画面の配信（S3 + CloudFront）",
 });
 
 // 全部の部品に「どのプロジェクトのものか」の札をつける（料金の内訳で見分けられる）
