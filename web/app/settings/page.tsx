@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { LineConnect } from "@/components/line-connect";
 import { RequireSession, useSession } from "@/components/session";
 import { Button, Card, Choice, Field, Help, inputClass, Notice, PageTitle } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -37,6 +38,7 @@ function Settings() {
     <div className="mx-auto flex max-w-xl flex-col gap-5">
       <PageTitle title="設定" lead={`${email} でログイン中`} />
       {message && <Notice tone={message.tone} title={message.text} />}
+      <LineConnect />
       <form onSubmit={save} className="flex flex-col gap-5">
         <Card className="flex flex-col gap-5">
           <Field label="呼び名" htmlFor="display_name">

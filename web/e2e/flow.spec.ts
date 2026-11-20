@@ -113,3 +113,42 @@ test("ログインしていないと、ログイン画面に案内する（戻�
   await page.goto("/summary/");
   await expect(page).toHaveURL(/\/login\/\?next=%2Fsummary/);
 });
+
+test("LINEとつなぐ：番号を出すと、つながる（お試しモード）", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/settings/");
+  await page.getByRole("button", { name: "番号を出す" }).click();
+  await expect(page.getByText("LINEとつながっています")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "つなぐのをやめる" }).click();
+  await expect(page.getByRole("button", { name: "番号を出す" })).toBeVisible();
+});
+
+test("レシートの確認待ち：写真を見て、科目を直して確定する", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  // LINE から下書きが届いた状態をつくる
+  await page.evaluate(() => {
+    const raw = JSON.parse(sessionStorage.getItem("shinkoku-mock-db")!);
+    raw.entries.push({
+      id: "r1", entry_date: "2026-11-20", description: "コーヒー", partner: "カフェ", status: "draft", source: "receipt",
+      created_at: "2026-11-20T00:00:00Z", updated_at: "2026-11-20T00:00:00Z", total: 600, has_receipt: true,
+      lines: [
+        { side: "debit", account_code: "5900", amount: 600, account_name: "雑費", friendly_name: "そのほかの経費" },
+        { side: "credit", account_code: "2900", amount: 600, account_name: "事業主借", friendly_name: "生活のお金で仕事の物を買った" },
+      ],
+    });
+    sessionStorage.setItem("shinkoku-mock-db", JSON.stringify(raw));
+  });
+  await page.reload();
+  await page.getByText("確認待ちが 1件 あります").click();
+  await expect(page.getByText("確認待ち").first()).toBeVisible();
+  await page.getByRole("link", { name: /そのほかの経費/ }).click();
+  await expect(page.getByRole("img", { name: "送ったレシートの写真" })).toBeVisible();
+  await page.getByLabel("何に使った？").selectOption({ label: "打ち合わせのお茶代（会議費）" });
+  await page.getByRole("button", { name: /直した内容で保存する/ }).click();
+  await expect(page.getByText("記録しました")).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByText(/確認待ちが/)).toBeHidden();
+  await expect(page.getByText("打ち合わせのお茶代")).toBeVisible();
+});

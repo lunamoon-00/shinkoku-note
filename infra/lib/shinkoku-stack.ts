@@ -9,6 +9,8 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import * as triggers from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
 import { pythonCode } from "./python-code.js";
@@ -97,13 +99,84 @@ export class ShinkokuStack extends Stack {
       handler: "shinkoku.handler.handler",
       memorySize: 512,
       timeout: Duration.seconds(29), // API Gateway の上限（30秒）より少し短く
-      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "20" },
+      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "20", UPLOADS_BUCKET: uploadsBucket.bucketName },
       logGroup: new logs.LogGroup(this, "ApiLogs", {
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: RemovalPolicy.DESTROY,
       }),
     });
     apiFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    uploadsBucket.grantRead(apiFn, "receipts/*"); // レシート写真を見るための署名つきURLを作る
+
+    // ───────── LINE でレシートを受け取る（4a） ─────────
+    // 鍵はパラメータストア（暗号化）から読む。読んでいい鍵だけを Lambda ごとに許す
+    const readParams = (...names: string[]) =>
+      new iam.PolicyStatement({
+        actions: ["ssm:GetParameter"],
+        resources: names.map((n) => `arn:aws:ssm:${this.region}:${this.account}:parameter${n}`),
+      });
+
+    // 何回やっても失敗したレシートの置き場（14日とっておく。あとで原因を調べる）
+    const receiptDlq = new sqs.Queue(this, "ReceiptDlq", {
+      retentionPeriod: Duration.days(14),
+      enforceSSL: true,
+    });
+    // 読み取り待ちの行列。3回失敗したら置き場へ
+    const receiptQueue = new sqs.Queue(this, "ReceiptQueue", {
+      visibilityTimeout: Duration.minutes(9), // 読み取り係の時間切れ（90秒）の6倍（AWS のおすすめ）
+      enforceSSL: true,
+      deadLetterQueue: { queue: receiptDlq, maxReceiveCount: 3 },
+    });
+
+    // 受け取り係：LINE の通知を確かめて、写真なら行列に入れて、すぐ返事する
+    const webhookFn = new lambda.Function(this, "LineWebhookFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      code,
+      handler: "shinkoku.webhook.handler",
+      memorySize: 512,
+      timeout: Duration.seconds(29),
+      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "20", RECEIPT_QUEUE_URL: receiptQueue.queueUrl },
+      logGroup: new logs.LogGroup(this, "LineWebhookLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    webhookFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    webhookFn.addToRolePolicy(readParams("/shinkoku/line/channel-secret", "/shinkoku/line/channel-access-token"));
+    receiptQueue.grantSendMessages(webhookFn);
+
+    // 読み取り係：写真を LINE から取ってきて、S3 に保存 → Gemini で読む → 記録 → LINE に返事
+    const workerFn = new lambda.Function(this, "ReceiptWorkerFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      code,
+      handler: "shinkoku.worker.handler",
+      memorySize: 512,
+      timeout: Duration.seconds(90), // DB の起動（約30秒）＋ Gemini（数秒〜）を待てるように
+      environment: {
+        ...dbEnv,
+        DB_USER: DB_APP_USER,
+        DB_CONNECT_TIMEOUT: "45",
+        UPLOADS_BUCKET: uploadsBucket.bucketName,
+        GEMINI_MODEL: "gemini-flash-latest",
+      },
+      logGroup: new logs.LogGroup(this, "ReceiptWorkerLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    workerFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    workerFn.addToRolePolicy(
+      readParams("/shinkoku/line/channel-access-token", "/shinkoku/gemini/api-key"),
+    );
+    uploadsBucket.grantPut(workerFn, "receipts/*");
+    workerFn.addEventSource(
+      new SqsEventSource(receiptQueue, {
+        batchSize: 1, // 1枚ずつ（失敗しても、ほかの写真に影響しない）
+        reportBatchItemFailures: true,
+      }),
+    );
 
     // マイグレーション（テーブル作成・変更）。公開のたびに、コードが変わっていれば自動で実行される
     const migrateFn = new lambda.Function(this, "MigrateFunction", {
@@ -161,13 +234,29 @@ export class ShinkokuStack extends Stack {
       ["/entries/{id}", apigw.HttpMethod.DELETE],
       ["/entries/{id}/confirm", apigw.HttpMethod.POST],
       ["/summary", apigw.HttpMethod.GET],
+      ["/entries/{id}/receipt", apigw.HttpMethod.GET],
+      ["/review", apigw.HttpMethod.GET],
+      ["/line", apigw.HttpMethod.GET],
+      ["/line", apigw.HttpMethod.DELETE],
+      ["/line/link-code", apigw.HttpMethod.POST],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });
     }
 
+    // LINE からの通知の入口。ログインは無いかわりに、受け取り係が LINE の署名を必ず確かめる
+    httpApi.addRoutes({
+      path: "/line/webhook",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("LineWebhookIntegration", webhookFn),
+    });
+
     // ───────── 次の Phase で使う値を表示 ─────────
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
+    new CfnOutput(this, "LineWebhookUrl", {
+      value: `${httpApi.apiEndpoint}/line/webhook`,
+      description: "LINE Developers の「Webhook URL」に入れる",
+    });
     new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: userPoolClient.userPoolClientId });
     new CfnOutput(this, "DbEndpoint", { value: db.attrEndpointAddress });

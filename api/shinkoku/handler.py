@@ -12,7 +12,9 @@ import traceback
 
 import pg8000.exceptions
 
-from . import db, ledger
+import os
+
+from . import db, ledger, receipts
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -53,6 +55,15 @@ def _year(event: dict) -> int:
     return int(raw)
 
 
+def _receipt_url(s3_key: str) -> str:
+    """レシート写真を5分だけ見られるURL（S3 の署名つきURL）。本人のAPIからしか作れない"""
+    import boto3
+
+    return boto3.client("s3").generate_presigned_url(
+        "get_object", Params={"Bucket": os.environ["UPLOADS_BUCKET"], "Key": s3_key}, ExpiresIn=300
+    )
+
+
 def route(con, user_id: str, event: dict):
     """どの窓口（ルート）かを見て、帳簿の関数を呼ぶ。戻り値は (状態コード, 中身)。"""
     key = event.get("routeKey", "")
@@ -72,9 +83,28 @@ def route(con, user_id: str, event: dict):
     if key == "GET /entries/{id}":
         return 200, ledger.get_entry(con, path.get("id", ""))
     if key == "PUT /entries/{id}":
-        return 200, ledger.update_entry(con, user_id, path.get("id", ""), _body(event))
+        entry = ledger.update_entry(con, user_id, path.get("id", ""), _body(event))
+        if entry["status"] == "confirmed":
+            receipts.learn_partner(con, user_id, entry)  # レシートの科目を直したら覚える
+        return 200, entry
     if key == "POST /entries/{id}/confirm":
-        return 200, ledger.confirm_entry(con, user_id, path.get("id", ""))
+        entry = ledger.confirm_entry(con, user_id, path.get("id", ""))
+        receipts.learn_partner(con, user_id, entry)
+        return 200, entry
+    if key == "GET /entries/{id}/receipt":
+        s3_key = ledger.receipt_key(con, path.get("id", ""))
+        if not s3_key:
+            return 404, {"error": {"code": "NOT_FOUND", "message": "この記録にはレシートの写真がありません", "details": []}}
+        return 200, {"url": _receipt_url(s3_key)}
+    if key == "GET /review":
+        return 200, {"count": ledger.review_count(con)}
+    if key == "GET /line":
+        return 200, ledger.line_status(con)
+    if key == "POST /line/link-code":
+        return 200, ledger.create_line_link_code(con, user_id)
+    if key == "DELETE /line":
+        ledger.unlink_line(con, user_id)
+        return 204, None
     if key == "DELETE /entries/{id}":
         ledger.delete_entry(con, user_id, path.get("id", ""))
         return 204, None
