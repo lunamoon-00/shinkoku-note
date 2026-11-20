@@ -1,0 +1,42 @@
+# ===== 秘密情報（絶対にGitに入れない） =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+
+# ===== Node.js / Next.js / CDK =====
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+cdk.out/
+cdk.context.json
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ===== テスト・ツール =====
+playwright-report/
+test-results/
+coverage/
+
+# ===== 作業用（レシート画像などの個人データを置かない） =====
+samples/private/
+*.local.*
+
+# ===== OS・エディタ =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
