@@ -26,10 +26,15 @@ describe("本体スタック", () => {
     });
   });
 
-  it("DB のバックアップは無料プランの上限（1日）におさめ、保存データは暗号化する", () => {
+  it("DB のバックアップは無料プランの上限（1日）におさめる", () => {
     template.hasResourceProperties("AWS::RDS::DBCluster", {
       BackupRetentionPeriod: 1,
-      StorageEncrypted: true,
+    });
+  });
+
+  it("DB に暗号化の指定を入れない（エクスプレス構成では作成が失敗するため）", () => {
+    template.hasResourceProperties("AWS::RDS::DBCluster", {
+      StorageEncrypted: Match.absent(),
     });
   });
 

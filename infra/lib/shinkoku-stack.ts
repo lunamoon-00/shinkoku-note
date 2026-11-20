@@ -60,8 +60,8 @@ export class ShinkokuStack extends Stack {
       withExpressConfiguration: true,
       // 無料プランではバックアップは1日分までしか残せない（7日にすると作成が失敗する）
       backupRetentionPeriod: 1,
-      // 保存するデータを暗号化する（エクスプレス構成の初期値はオフなので、明示してオンにする）
-      storageEncrypted: true,
+      // ※ 保存データの暗号化（storageEncrypted）はエクスプレス構成では使えない（AWSに断られる）。
+      //   通信はTLS、接続はIAM認証のLambdaだけに限って守る。有料プランに上げたら暗号化つきに作り直す（設計書の課題）
     });
     db.applyRemovalPolicy(RemovalPolicy.SNAPSHOT); // 消すときは最後にバックアップを残す
 
