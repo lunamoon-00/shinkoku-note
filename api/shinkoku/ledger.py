@@ -276,8 +276,12 @@ PROFILE_FIELDS = ("display_name", "filing_type", "mode", "business_name")
 
 def get_profile(con: pg8000.native.Connection, user_id: str) -> dict:
     con.run("insert into profiles (user_id) values (:u) on conflict (user_id) do nothing", u=user_id)
-    r = con.run("select display_name, filing_type, mode, business_name from profiles where user_id = :u", u=user_id)[0]
-    return dict(zip(PROFILE_FIELDS, r))
+    r = con.run(
+        "select display_name, filing_type, mode, business_name, onboarded_at is not null"
+        " from profiles where user_id = :u",
+        u=user_id,
+    )[0]
+    return {**dict(zip(PROFILE_FIELDS, r[:4])), "onboarded": r[4]}
 
 
 def update_profile(con: pg8000.native.Connection, user_id: str, payload: dict) -> dict:
@@ -293,12 +297,18 @@ def update_profile(con: pg8000.native.Connection, user_id: str, payload: dict) -
     for k in ("display_name", "business_name"):
         if not isinstance(new[k], str) or len(new[k]) > 50:
             errors.append(_err(k, "50文字までで入れてください"))
+    onboarded = payload.get("onboarded")
+    if onboarded is not None and not isinstance(onboarded, bool):
+        errors.append(_err("onboarded", "はい（true）かいいえ（false）で入れてください"))
     if errors:
         raise ValidationError("入力を確かめてください", errors)
     con.run(
         "update profiles set display_name = :dn, filing_type = :ft, mode = :m, business_name = :bn,"
+        " onboarded_at = case when cast(:ob as boolean) is true then coalesce(onboarded_at, now())"
+        "                     when cast(:ob as boolean) is false then null else onboarded_at end,"
         " updated_at = now() where user_id = :u",
-        dn=new["display_name"].strip(), ft=new["filing_type"], m=new["mode"], bn=new["business_name"].strip(), u=user_id,
+        dn=new["display_name"].strip(), ft=new["filing_type"], m=new["mode"], bn=new["business_name"].strip(),
+        ob=onboarded, u=user_id,
     )
     _audit(con, user_id, "profile.update", user_id)
     return get_profile(con, user_id)

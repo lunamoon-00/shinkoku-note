@@ -1,0 +1,43 @@
+# 画面（web/）の自動チェック。
+# 型チェック → 書き方チェック → 単体テスト → お試しモードで書き出し → 画面の自動テスト（スマホ・パソコン）
+name: web
+
+on:
+  pull_request:
+    paths: ["web/**", "api/shinkoku/migrations/0002_accounts.sql", ".github/workflows/web.yml"]
+  push:
+    branches: [main]
+    paths: ["web/**", "api/shinkoku/migrations/0002_accounts.sql", ".github/workflows/web.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: お試しモードの科目一覧が、DBの科目（SQL）と同じか
+        run: python3 scripts/gen-mock-accounts.py && git diff --exit-code lib/mock-accounts.json
+      - run: npm run build:mock
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
