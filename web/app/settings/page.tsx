@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { LineConnect } from "@/components/line-connect";
 import { RequireSession, useSession } from "@/components/session";
@@ -39,6 +40,14 @@ function Settings() {
       <PageTitle title="設定" lead={`${email} でログイン中`} />
       {message && <Notice tone={message.tone} title={message.text} />}
       <LineConnect />
+      <Link href="/recurring/" className="flex items-center gap-3 rounded-[var(--radius-card)] bg-surface p-4 shadow-card transition hover:bg-surface-2">
+        <span aria-hidden className="text-2xl">🔁</span>
+        <span className="flex-1">
+          <span className="block font-bold">毎月の固定費</span>
+          <span className="block text-sm text-sub">家賃・スマホ代・サブスクなどを、毎月自動で記録</span>
+        </span>
+        <span aria-hidden className="text-sub">›</span>
+      </Link>
       <form onSubmit={save} className="flex flex-col gap-5">
         <Card className="flex flex-col gap-5">
           <Field label="呼び名" htmlFor="display_name">

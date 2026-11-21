@@ -93,3 +93,19 @@ export interface CsvPreview {
   source: "personal" | "business";
   rows: CsvRow[];
 }
+
+export interface RecurringRule {
+  id: string;
+  name: string;
+  account_code: string;
+  amount: number;
+  business_ratio: number;
+  day_of_month: number;
+  paid_from: "personal" | "business";
+  start_month: string; // "2026-01"
+  end_month: string | null;
+  active: boolean;
+  monthly_expense: number;
+}
+
+export type RecurringInput = Omit<RecurringRule, "id" | "active" | "monthly_expense">;

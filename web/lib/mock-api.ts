@@ -2,7 +2,7 @@
 // データはタブを閉じるまで残る（sessionStorage）。
 
 import accountsJson from "./mock-accounts.json";
-import type { Account, CsvRow, Entry, EntryInput, Profile } from "./types";
+import type { Account, CsvRow, Entry, EntryInput, Profile, RecurringRule } from "./types";
 
 const accounts = accountsJson as Account[];
 const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -12,6 +12,7 @@ interface Db {
   entries: Entry[];
   lineLinked?: boolean;
   imports?: Record<string, { source: string; rows: CsvRow[]; done: boolean }>;
+  recurring?: RecurringRule[];
 }
 
 const KEY = "shinkoku-mock-db";
@@ -96,7 +97,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
   }
   const url = new URL(path, "http://mock");
   const db = load();
-  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}")}`;
+  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}").replace(/\/recurring\/[^/]+/, "/recurring/{id}")}`;
   const status = url.searchParams.get("status");
   const id = decodeURIComponent(url.pathname.split("/")[2] ?? "");
   const year = Number(url.searchParams.get("year") ?? new Date().getFullYear());
@@ -211,6 +212,48 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       save(db);
       return json(200, { created, skipped: choices.length - created });
     }
+    case "GET /recurring":
+      return json(200, { rules: db.recurring ?? [] });
+    case "POST /recurring": {
+      const input = body as Omit<RecurringRule, "id" | "active" | "monthly_expense">;
+      if (!input.name || !input.amount || !input.account_code) {
+        return fail(400, "VALIDATION", "入力を確かめてください", [{ field: "name", message: "名前を入れてください" }]);
+      }
+      const rule: RecurringRule = {
+        ...input, id: crypto.randomUUID(), active: true,
+        monthly_expense: Math.max(1, Math.floor((input.amount * input.business_ratio + 50) / 100)),
+      };
+      db.recurring = [...(db.recurring ?? []), rule];
+      // お試しモード：いつから〜先月までの分を記録する
+      const [y, m] = rule.start_month.split("-").map(Number);
+      const now = new Date();
+      let created = 0;
+      for (let d = new Date(y, m - 1, 1); d < new Date(now.getFullYear(), now.getMonth(), 1); d.setMonth(d.getMonth() + 1)) {
+        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(Math.min(rule.day_of_month, 28)).padStart(2, "0")}`;
+        const from = rule.paid_from === "business" ? "1200" : "2900";
+        db.entries.push({
+          ...toEntry(crypto.randomUUID(), { entry_date: date, description: `${rule.name}（${d.getMonth() + 1}月分）`, partner: rule.name, status: "confirmed", lines: [
+            { side: "debit", account_code: rule.account_code, amount: rule.monthly_expense },
+            { side: "credit", account_code: from, amount: rule.monthly_expense },
+          ] }),
+          source: "recurring",
+        });
+        created++;
+      }
+      save(db);
+      return json(201, { rule, created });
+    }
+    case "PUT /recurring/{id}/active": {
+      const rule = db.recurring?.find((r) => r.id === id);
+      if (!rule) return fail(404, "NOT_FOUND", "見つかりませんでした");
+      rule.active = (body as { active: boolean }).active;
+      save(db);
+      return json(200, { rule, created: 0 });
+    }
+    case "DELETE /recurring/{id}":
+      db.recurring = (db.recurring ?? []).filter((r) => r.id !== id);
+      save(db);
+      return json(204, null);
     case "GET /review":
       return json(200, { count: db.entries.filter((e) => e.status === "draft").length });
     case "GET /line":
