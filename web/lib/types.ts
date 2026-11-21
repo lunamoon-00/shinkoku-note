@@ -132,3 +132,67 @@ export interface FreeeEntrySync {
   kind: "deal" | "manual_journal" | null;
   freee_id: number | null;
 }
+
+export type Disability = "normal" | "special" | null;
+
+export interface FamilyMember {
+  name: string;
+  relation: "spouse" | "child" | "parent" | "other";
+  birth_date: string | null;
+  income: number;
+  living_together: boolean;
+  disability: Disability;
+  is_senjusha: boolean;
+}
+
+export interface TaxInputs {
+  social_insurance?: number;
+  small_business_mutual_aid?: number;
+  donations?: number;
+  prepaid_tax?: number;
+  withholding_extra?: number;
+  life_insurance?: { new_general?: number; new_medical?: number; new_pension?: number; old_general?: number; old_pension?: number };
+  earthquake_insurance?: { earthquake?: number; old_long_term?: number };
+  medical?: { mode: "medical" | "self_medication"; paid?: number; reimbursed?: number };
+  tax_credits?: { housing_loan?: number };
+  self?: { disability: Disability; widow: boolean; single_parent: boolean; working_student: boolean };
+  family?: FamilyMember[];
+  salaries?: { payer: string; gross: number; income_after_deduction: number; withheld: number; social_insurance: number }[];
+  other_incomes?: { label: string; income: number }[];
+  checked?: Record<string, boolean>;
+}
+
+export interface TaxResult {
+  year: number;
+  revenue: number;
+  expense: number;
+  business_income_before_senjusha: number;
+  senjusha_deduction: number;
+  business_income: number;
+  salary_income: number;
+  other_income: number;
+  total_income: number;
+  total_deductions: number;
+  taxable_income: number;
+  tax_rate_percent: number;
+  income_tax: number;
+  tax_credits: number;
+  base_income_tax: number;
+  reconstruction_tax: number;
+  total_tax: number;
+  withholding: number;
+  prepaid_tax: number;
+  payable: number;
+  refund: number;
+  deductions: Record<string, number>;
+  notes: string[];
+}
+
+export interface TaxOverview {
+  inputs: TaxInputs;
+  books: { revenue: number; expense: number; withholding: number };
+  white_lines: { line: string; amount: number }[];
+  checklist: { key: string; label: string; done: boolean; warn: string }[];
+  result: TaxResult;
+  sources: Record<string, string>;
+}

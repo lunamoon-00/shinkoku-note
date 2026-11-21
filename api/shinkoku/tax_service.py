@@ -15,6 +15,9 @@ import pg8000.native
 from . import ledger, tax
 
 RELATIONS = ("spouse", "child", "parent", "other")
+# 「確認した」の印をつける項目（チェックリストに使う）
+SECTIONS = ("books", "salary", "social_insurance", "small_business", "life_insurance", "earthquake", "medical",
+            "donations", "family", "self", "other_income", "credits")
 DISABILITY = (None, "normal", "special")
 MAX_YEN = 1_000_000_000
 
@@ -117,11 +120,26 @@ def validate_inputs(payload: dict, year: int) -> dict:
     # 事業専従者は、家族の「専従者」の印から作る
     clean["senjusha"] = [{"relation": "spouse" if f["relation"] == "spouse" else "other"} for f in clean["family"] if f["is_senjusha"]]
 
+    salaries = payload.get("salaries") or []
+    clean["salaries"] = []
+    for i, s in enumerate(salaries if isinstance(salaries, list) else []):
+        s = s if isinstance(s, dict) else {}
+        clean["salaries"].append({
+            "payer": str(s.get("payer", ""))[:30],
+            "gross": _yen(s.get("gross"), f"salaries[{i}].gross", errors),                       # 支払金額
+            "income_after_deduction": _yen(s.get("income_after_deduction"), f"salaries[{i}].income_after_deduction", errors),
+            "withheld": _yen(s.get("withheld"), f"salaries[{i}].withheld", errors),               # 源泉徴収税額
+            "social_insurance": _yen(s.get("social_insurance"), f"salaries[{i}].social_insurance", errors),  # 社会保険料等の金額
+        })
+    clean["salaries"] = clean["salaries"][:5]
+
     others = payload.get("other_incomes") or []
     clean["other_incomes"] = [
         {"label": str(o.get("label", ""))[:30], "income": _yen(o.get("income"), f"other_incomes[{i}].income", errors)}
         for i, o in enumerate(others if isinstance(others, list) else []) if isinstance(o, dict)
     ][:10]
+    checked = payload.get("checked") or {}
+    clean["checked"] = {k: True for k in SECTIONS if isinstance(checked, dict) and checked.get(k) is True}
     if errors:
         raise ledger.ValidationError("入力を確かめてください", errors)
     return clean
@@ -138,9 +156,62 @@ def save_inputs(con: pg8000.native.Connection, user_id: str, year: int, payload:
     return clean
 
 
+def white_lines(con: pg8000.native.Connection, year: int) -> list[dict]:
+    """収支内訳書（一般用）の欄ごとの合計（確定した記録だけ）"""
+    s = ledger.summary(con, year)
+    lines: dict[str, int] = {}
+    for a in s["accounts"]:
+        if a["white_line"]:
+            lines[a["white_line"]] = lines.get(a["white_line"], 0) + a["balance"]
+    return [{"line": k, "amount": v} for k, v in lines.items()]
+
+
+CHECK_LABELS = {
+    "books": "売上と経費の記録（今年の分をぜんぶ入れた）",
+    "salary": "お給料（会社の源泉徴収票）",
+    "social_insurance": "健康保険・年金など（社会保険料）",
+    "small_business": "小規模企業共済・iDeCo",
+    "life_insurance": "生命保険料",
+    "earthquake": "地震保険料",
+    "medical": "医療費",
+    "donations": "ふるさと納税・寄附",
+    "family": "家族（配偶者・子・親など）",
+    "self": "本人のこと（障害者・ひとり親など）",
+    "other_income": "ほかの所得（副業のお給料など）",
+    "credits": "住宅ローン控除・予定納税",
+}
+
+
+def checklist(con: pg8000.native.Connection, year: int, inputs: dict, b: dict) -> list[dict]:
+    """申告の前にそろえるもの。done＝そろった、warn＝気をつけること"""
+    checked = inputs.get("checked", {})
+    items = []
+    drafts = con.run(
+        "select count(*) from journal_entries where status = 'draft'"
+        " and entry_date >= make_date(:y, 1, 1) and entry_date < make_date(:y + 1, 1, 1)", y=year,
+    )[0][0]
+    items.append({"key": "drafts", "label": "確認待ちの記録をぜんぶ確定した", "done": drafts == 0,
+                  "warn": f"確認待ちが {drafts}件 あります。確定するまで計算に入りません" if drafts else ""})
+    for key, label in CHECK_LABELS.items():
+        warn = ""
+        if key == "books" and b["revenue"] == 0:
+            warn = "売上が0円です。報酬の記録を入れたか確かめてね"
+        if key == "social_insurance" and checked.get(key) and not inputs.get("social_insurance"):
+            warn = "国民健康保険や国民年金を払っていたら、金額を入れてね（払っていなければこのままでOK）"
+        items.append({"key": key, "label": label, "done": bool(checked.get(key)), "warn": warn})
+    return items
+
+
 def compute(con: pg8000.native.Connection, year: int) -> dict:
     rules, sources = rules_for(con, year)
     b = books(con, year)
     inputs = get_inputs(con, year)
     result = tax.calculate(year, rules, b, inputs)
-    return {"inputs": inputs, "books": b, "result": result.to_dict(), "sources": sources}
+    return {
+        "inputs": inputs,
+        "books": b,
+        "white_lines": white_lines(con, year),
+        "checklist": checklist(con, year, inputs, b),
+        "result": result.to_dict(),
+        "sources": sources,
+    }

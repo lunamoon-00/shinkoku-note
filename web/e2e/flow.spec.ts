@@ -205,3 +205,26 @@ test("freeeとつなぐ：許可してもどってくると、つながって送
   await page.getByRole("button", { name: "やめる", exact: true }).click();
   await expect(page.getByRole("button", { name: "freeeとつなぐ" })).toBeVisible();
 });
+
+test("確定申告の準備：社会保険料を入れて保存すると、税金のめやすとチェックリストが更新される", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/record/");
+  await page.getByText("報酬が入った", { exact: true }).click();
+  await page.getByLabel("報酬はいくら？").fill("3000000");
+  await page.getByLabel("実際に振り込まれたのはいくら？").fill("2693700");
+  await page.getByRole("button", { name: /記録する/ }).click();
+  await expect(page.getByText("記録しました")).toBeVisible();
+
+  await page.goto("/");
+  await page.getByText("確定申告の準備").click();
+  await expect(page.getByRole("heading", { name: "確定申告の準備" })).toBeVisible();
+  await page.getByRole("button", { name: /健康保険・年金など/ }).click();
+  await page.getByLabel("払った社会保険料の合計").fill("300000");
+  await page.getByRole("checkbox", { name: /確認した/ }).check();
+  await page.getByRole("button", { name: "保存して計算する" }).click();
+  await expect(page.getByText("保存して、計算しなおしました")).toBeVisible();
+  await expect(page.getByText("戻ってくるお金（還付）のめやす")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "申告の日に入れる数字" })).toBeVisible();
+  await expect(page.getByText("源泉徴収税額")).toBeVisible();
+});

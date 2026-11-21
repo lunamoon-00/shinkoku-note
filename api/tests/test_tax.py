@@ -189,7 +189,7 @@ def test_住宅ローン控除と予定納税(rules):
 
 def test_DBのルールには_2025年と2026年の全部の項目と出典がある(database):
     rows = database.run("select year, count(*), count(*) filter (where source_url like 'https://%') from tax_rules group by year order by year")
-    assert rows == [[2025, 20, 20], [2026, 20, 20]]
+    assert rows == [[2025, 21, 21], [2026, 21, 21]]
 
 
 # ───────── 帳簿・入力とつないだ計算 ─────────
@@ -259,3 +259,64 @@ def test_入力は本人のぶんしか見えない(app_con):
         tax_service.save_inputs(app_con, ALICE, 2026, {"social_insurance": 123})
     with db.as_user(app_con, BOB):
         assert tax_service.get_inputs(app_con, 2026) == {}
+
+
+def test_収支内訳書の欄とチェックリスト(app_con):
+    from shinkoku import ledger, tax_service
+
+    with db.as_user(app_con, ALICE):
+        ledger.create_entry(app_con, ALICE, {"entry_date": "2026-05-01", "status": "confirmed", "lines": [
+            {"side": "debit", "account_code": "5210", "amount": 3000},   # 新聞図書費 → その他の経費
+            {"side": "credit", "account_code": "2900", "amount": 3000}]})
+        ledger.create_entry(app_con, ALICE, {"entry_date": "2026-05-02", "status": "confirmed", "lines": [
+            {"side": "debit", "account_code": "5230", "amount": 1000},   # 会議費 → その他の経費
+            {"side": "credit", "account_code": "2900", "amount": 1000}]})
+        ledger.create_entry(app_con, ALICE, {"entry_date": "2026-05-03", "status": "draft", "lines": [
+            {"side": "debit", "account_code": "5190", "amount": 500},
+            {"side": "credit", "account_code": "2900", "amount": 500}]})
+        tax_service.save_inputs(app_con, ALICE, 2026, {"checked": {"social_insurance": True, "family": True, "bogus": True}})
+        out = tax_service.compute(app_con, 2026)
+    assert {"line": "その他の経費", "amount": 4000} in out["white_lines"]
+    items = {i["key"]: i for i in out["checklist"]}
+    assert items["drafts"]["done"] is False and "1件" in items["drafts"]["warn"]
+    assert items["family"]["done"] is True and items["medical"]["done"] is False
+    assert "国民健康保険" in items["social_insurance"]["warn"]   # 確認したのに0円 → 念のため声かけ
+    assert "売上が0円" in items["books"]["warn"]
+    assert "bogus" not in out["inputs"]["checked"]
+
+
+
+@pytest.mark.parametrize("year, gross, expected", [
+    (2026, 700_000, 0),             # 74万円以下 → 0円
+    (2026, 1_000_000, 260_000),     # 100万 − 74万
+    (2026, 2_190_999, 1_450_999),
+    (2026, 2_194_000, 1_453_000),   # 注2の表
+    (2026, 2_200_000, 1_460_000),   # 2,200,000 −（660,000 ＋ 80,000）
+    (2026, 3_001_999, 2_020_000),   # 4,000円未満切り捨て → 3,000,000 −（900,000 ＋ 80,000）
+    (2026, 5_000_000, 3_560_000),   # 5,000,000 −（1,000,000 ＋ 440,000）
+    (2026, 7_000_000, 5_200_000),   # 7,000,000 × 90% − 1,100,000
+    (2026, 9_000_000, 7_050_000),   # 9,000,000 − 1,950,000
+    (2025, 1_800_000, 1_150_000),   # 令和7年分は 190万円まで 65万円
+])
+def test_給与所得の金額(rules, year, gross, expected):
+    assert tax.salary_income(rules[year]["salary"], gross) == expected
+
+
+def test_途中まで会社員だった人_お給料と事業をあわせて計算し_源泉徴収と社会保険料も足す(rules):
+    r = calc(rules, revenue=2_000_000, expense=400_000, social_insurance=100_000,
+             salaries=[{"gross": 2_000_000, "withheld": 40_000, "social_insurance": 280_000}])
+    assert r.lines["salary_income"] == 1_260_000              # 200万 − 74万
+    assert r.lines["total_income"] == 2_860_000               # 事業 160万 ＋ 給与 126万
+    assert r.deductions["social_insurance"] == 380_000        # 10万 ＋ 28万
+    # 2,860,000 −（380,000 ＋ 1,040,000）= 1,440,000 → 5% = 72,000 → 復興 1,512 → 73,512 − 40,000 = 33,512 → 33,500
+    assert r.lines["payable"] == 33_500
+
+
+def test_源泉徴収票に給与所得控除後の金額があれば_そちらを使う(rules):
+    r = calc(rules, revenue=0, expense=0, salaries=[{"gross": 3_000_000, "income_after_deduction": 2_000_000}])
+    assert r.lines["salary_income"] == 2_000_000
+
+
+def test_源泉徴収票が2枚なら_支払金額を合計してから計算する(rules):
+    r = calc(rules, revenue=0, expense=0, salaries=[{"gross": 1_000_000}, {"gross": 1_000_000}])
+    assert r.lines["salary_income"] == 1_260_000   # 200万 − 74万（1枚ずつだと 26万×2 = 52万 になってしまう）
