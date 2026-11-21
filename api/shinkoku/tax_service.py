@@ -12,7 +12,7 @@ import json
 
 import pg8000.native
 
-from . import certificates, depreciation, ledger, tax
+from . import certificates, consumption, depreciation, ledger, tax
 
 RELATIONS = ("spouse", "child", "parent", "other")
 # 「確認した」の印をつける項目（チェックリストに使う）
@@ -221,5 +221,6 @@ def compute(con: pg8000.native.Connection, year: int) -> dict:
         "white_lines": white_lines(con, year, b["depreciation"]),
         "checklist": checklist(con, year, inputs, b),
         "result": result.to_dict(),
+        "consumption": consumption.for_year(con, year, rules),  # インボイス登録している人だけ（していなければ null）
         "sources": sources,
     }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useState, type FormEvent } from "react";
 import { FreeeConnect } from "@/components/freee-connect";
+import { InvoiceSettingsCard } from "@/components/invoice-settings";
 import { LineConnect } from "@/components/line-connect";
 import { RequireSession, useSession } from "@/components/session";
 import { Button, Card, Choice, Field, Help, inputClass, Notice, PageTitle } from "@/components/ui";
@@ -44,6 +45,7 @@ function Settings() {
       <Suspense>
         <FreeeConnect />
       </Suspense>
+      <InvoiceSettingsCard />
       <Link href="/recurring/" className="flex items-center gap-3 rounded-[var(--radius-card)] bg-surface p-4 shadow-card transition hover:bg-surface-2">
         <span aria-hidden className="text-2xl">🔁</span>
         <span className="flex-1">

@@ -197,6 +197,29 @@ function Guide({ data }: { data: TaxOverview }) {
   );
 }
 
+function Consumption({ c }: { c: NonNullable<TaxOverview["consumption"]> }) {
+  const method = c.method === "two_tenths" ? "2割特例" : c.method === "simplified" ? `簡易課税・${c.category_label}` : "本則課税";
+  return (
+    <Card className="flex flex-col gap-3">
+      <div>
+        <h2 className="font-bold">消費税（インボイス）</h2>
+        <p className="text-sm text-sub">{method}で計算。登録日（{c.registered_on}）より後の売上が対象です。申告と納付は翌年の3月31日まで</p>
+      </div>
+      <p className="text-3xl"><Money value={c.payable_total} /></p>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-2xl bg-surface-2 p-3 text-[15px]">
+        {([
+          ["課税売上（税込）", c.taxable_sales], ["課税標準額（1,000円未満切り捨て）", c.tax_base], ["消費税額（7.8%）", c.national_tax],
+          [c.method === "two_tenths" ? "控除する税額（2割特例：8割）" : "控除する税額（みなし仕入率）", c.deduction],
+          ["納める消費税（100円未満切り捨て）", c.payable_national], ["納める地方消費税（22/78）", c.payable_local],
+        ] as [string, number][]).map(([l, v]) => (
+          <div key={l} className="contents"><dt>{l}</dt><dd className="num text-right font-bold">{yen(v)}</dd></div>
+        ))}
+      </dl>
+      {c.notes.map((n) => <Notice key={n} tone="warn">{n}</Notice>)}
+    </Card>
+  );
+}
+
 function Tax() {
   const [year, setYear] = useState(defaultYear);
   const [state, reload] = useLoad(() => api.tax(year), year);
@@ -380,6 +403,7 @@ function Tax() {
             <h2 className="hidden text-xl font-bold print:block">{year}年分 確定申告で入れる数字（申告ノート）</h2>
             <Result data={live} />
             <Guide data={live} />
+            {live.consumption && <Consumption c={live.consumption} />}
           </div>
           <Button variant="secondary" className="print:hidden" onClick={() => window.print()}>🖨️ 印刷・PDFで保存</Button>
         </>

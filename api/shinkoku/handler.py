@@ -15,7 +15,7 @@ import pg8000.exceptions
 
 import os
 
-from . import certificates, csv_import, db, depreciation, freee_api, freee_sync, freee_worker, ledger, receipts, recurring, tax_service
+from . import certificates, consumption, csv_import, db, depreciation, freee_api, freee_sync, freee_worker, ledger, receipts, recurring, tax_service
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -168,6 +168,10 @@ def route(con, user_id: str, event: dict):
     if key == "DELETE /tax/documents/{id}":
         certificates.delete_document(con, user_id, path.get("id", ""))
         return 204, None
+    if key == "GET /invoice":
+        return 200, consumption.get_settings(con)
+    if key == "PUT /invoice":
+        return 200, consumption.save_settings(con, user_id, _body(event))
     if key == "GET /assets":
         return 200, {"assets": depreciation.list_assets(con)}
     if key == "POST /assets":
