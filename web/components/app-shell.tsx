@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-bg/90 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-bg/90 px-4 py-3 backdrop-blur print:hidden">
         <Link href="/" className="flex items-center gap-2 font-bold">
           <span aria-hidden className="grid size-8 place-items-center rounded-xl bg-accent text-on-accent">申</span>
           <span>申告ノート</span>
@@ -70,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {!bare && (
         <nav
           aria-label="メニュー"
-          className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+          className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur print:hidden sm:hidden"
         >
           <ul className="mx-auto grid max-w-3xl grid-cols-5">
             {NAV.map((n) => {

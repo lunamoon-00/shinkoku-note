@@ -4,7 +4,7 @@
 import { auth } from "./auth";
 import { config } from "./config";
 import { mockFetch } from "./mock-api";
-import type { Account, CsvPreview, Entry, EntryInput, FreeeEntrySync, FreeeSource, FreeeStatus, LineStatus, Profile, RecurringInput, RecurringRule, Summary, TaxInputs, TaxOverview } from "./types";
+import type { Account, CsvPreview, Entry, EntryInput, FreeeEntrySync, FreeeSource, FreeeStatus, LineStatus, Profile, FixedAsset, RecurringInput, RecurringRule, Summary, TaxInputs, TaxOverview } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -104,6 +104,9 @@ export const api = {
   freeeEntry: (id: string) => request<{ sync: FreeeEntrySync | null }>("GET", `/entries/${encodeURIComponent(id)}/freee`).then((r) => r.sync),
   tax: (year: number) => request<TaxOverview>("GET", `/tax/${year}`),
   saveTaxInputs: (year: number, inputs: TaxInputs) => request<TaxOverview>("PUT", `/tax/${year}/inputs`, inputs),
+  deleteTaxDocument: (id: string) => request<void>("DELETE", `/tax/documents/${encodeURIComponent(id)}`),
+  createAsset: (input: Omit<FixedAsset, "id" | "disposed_on">) => request<FixedAsset>("POST", "/assets", input),
+  deleteAsset: (id: string) => request<void>("DELETE", `/assets/${encodeURIComponent(id)}`),
   previewCsv: (filename: string, contentBase64: string, source: "personal" | "business") =>
     request<CsvPreview>("POST", "/imports/csv", { filename, content_base64: contentBase64, source }),
   commitCsv: (importId: string, rows: { row_id: number; include: boolean; account_code: string }[]) =>

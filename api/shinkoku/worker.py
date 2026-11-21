@@ -10,7 +10,7 @@ import json
 import os
 import traceback
 
-from . import db, freee_worker, gemini, line, receipts
+from . import certificates, db, freee_worker, gemini, line, receipts, recurring
 
 MAX_ATTEMPTS = 3
 
@@ -40,7 +40,7 @@ NOT_LINKED = (
 )
 
 
-def process(msg: dict, store=_s3_store, reader=gemini.read_receipt) -> receipts.Outcome:
+def process(msg: dict, store=_s3_store, reader=gemini.read_receipt, doc_reader=gemini.read_document) -> receipts.Outcome:
     con = db.shared_connection()
     # LINE の利用者番号から、アプリの利用者を引く（つながっていなければ写真は取りにいかない）
     con.run("begin")
@@ -57,8 +57,13 @@ def process(msg: dict, store=_s3_store, reader=gemini.read_receipt) -> receipts.
     mime = mime_of(image)
     if not mime:
         return receipts.Outcome("not_receipt", "写真の形式が読めませんでした。JPEG か PNG で送ってね")
+    # まず何の書類かを見分ける。レシートならこれまでどおり、控除証明書などなら確定申告の準備へ
+    doc = doc_reader(image, mime)
     with db.as_user(con, user_id):
-        outcome = receipts.process_receipt(con, user_id, image, mime, via="line", store=store, reader=reader)
+        if doc.get("doc_type") in ("receipt", "other", None):
+            outcome = receipts.process_receipt(con, user_id, image, mime, via="line", store=store, reader=reader)
+        else:
+            outcome = certificates.process_certificate(con, user_id, image, mime, doc, store=store, today=recurring.today_jst())
     outcome.entry_user = user_id
     return outcome
 

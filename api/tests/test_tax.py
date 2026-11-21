@@ -189,7 +189,7 @@ def test_住宅ローン控除と予定納税(rules):
 
 def test_DBのルールには_2025年と2026年の全部の項目と出典がある(database):
     rows = database.run("select year, count(*), count(*) filter (where source_url like 'https://%') from tax_rules group by year order by year")
-    assert rows == [[2025, 21, 21], [2026, 21, 21]]
+    assert rows == [[2025, 22, 22], [2026, 22, 22]]
 
 
 # ───────── 帳簿・入力とつないだ計算 ─────────
@@ -209,7 +209,7 @@ def test_帳簿から売上と経費と_印つきの源泉徴収を集めて計�
             {"side": "credit", "account_code": "2900", "amount": 100_000}]})
         tax_service.save_inputs(app_con, ALICE, 2026, {"social_insurance": 200_000})
         out = tax_service.compute(app_con, 2026)
-    assert out["books"] == {"revenue": 1_000_000, "expense": 100_000, "withholding": 102_100}
+    assert out["books"] == {"revenue": 1_000_000, "expense": 100_000, "withholding": 102_100, "depreciation": 0}
     # 900,000 − (200,000 + 1,040,000) → 0 → 税金0円 → 源泉徴収 102,100円がぜんぶ戻る
     assert out["result"]["taxable_income"] == 0 and out["result"]["refund"] == 102_100
     assert out["sources"]["basic_deduction"].startswith("https://www.nta.go.jp/")
@@ -320,3 +320,75 @@ def test_源泉徴収票に給与所得控除後の金額があれば_そちら�
 def test_源泉徴収票が2枚なら_支払金額を合計してから計算する(rules):
     r = calc(rules, revenue=0, expense=0, salaries=[{"gross": 1_000_000}, {"gross": 1_000_000}])
     assert r.lines["salary_income"] == 1_260_000   # 200万 − 74万（1枚ずつだと 26万×2 = 52万 になってしまう）
+
+
+
+# ───────── 減価償却 ─────────
+def rates(rules):
+    return rules[2026]["straight_line_rates"]
+
+
+def test_償却率は法令の表どおり(rules):
+    r = rates(rules)
+    assert (r["3"], r["4"], r["9"], r["12"], r["100"]) == (334, 250, 112, 84, 10)
+
+
+def test_定額法_パソコン4年_7月から使い始め(rules):
+    from shinkoku import depreciation
+
+    pc = {"acquired_on": "2026-07-10", "cost": 240_000, "useful_life": 4, "method": "straight", "business_ratio": 100}
+    s = depreciation.schedule(pc, rates(rules), 2031)
+    # 1年分 = 240,000 × 0.250 = 60,000。1年目は7〜12月の6か月 → 30,000
+    assert [(x["year"], x["depreciation"]) for x in s] == [
+        (2026, 30_000), (2027, 60_000), (2028, 60_000), (2029, 60_000), (2030, 29_999)]  # 最後は1円残す
+    assert s[-1]["book_value"] == 1
+
+
+def test_家事按分した分だけ経費になる(rules):
+    from shinkoku import depreciation
+
+    pc = {"acquired_on": "2026-01-01", "cost": 300_000, "useful_life": 4, "method": "straight", "business_ratio": 70}
+    first = depreciation.schedule(pc, rates(rules), 2026)[0]
+    assert (first["depreciation"], first["expense"]) == (75_000, 52_500)
+
+
+def test_一括償却は3年で3分の1ずつ_月数で分けない(rules):
+    from shinkoku import depreciation
+
+    item = {"acquired_on": "2026-12-01", "cost": 150_001, "method": "lump3", "business_ratio": 100}
+    assert [x["depreciation"] for x in depreciation.schedule(item, rates(rules), 2030)] == [50_000, 50_000, 50_001]
+
+
+def test_売った年は使った月数まで(rules):
+    from shinkoku import depreciation
+
+    pc = {"acquired_on": "2026-01-01", "cost": 240_000, "useful_life": 4, "method": "straight", "disposed_on": "2027-03-31"}
+    s = depreciation.schedule(pc, rates(rules), 2030)
+    assert [(x["year"], x["depreciation"]) for x in s] == [(2026, 60_000), (2027, 15_000)]
+
+
+def test_資産を登録すると_その年の経費と収支内訳書の減価償却費に入る(app_con):
+    from shinkoku import depreciation, ledger, tax_service
+
+    with db.as_user(app_con, ALICE):
+        depreciation.create_asset(app_con, ALICE, {"name": "ノートパソコン", "acquired_on": "2026-07-01",
+                                                   "cost": 240_000, "useful_life": 4, "business_ratio": 100})
+        out = tax_service.compute(app_con, 2026)
+    assert out["books"]["depreciation"] == 30_000 and out["books"]["expense"] == 30_000
+    assert {"line": "減価償却費", "amount": 30_000} in out["white_lines"]
+    assert out["assets"][0]["name"] == "ノートパソコン"
+
+
+@pytest.mark.parametrize("payload, field", [
+    ({"name": "PC", "acquired_on": "2026-01-01", "cost": 50_000}, "cost"),                         # 10万円未満は減価償却しない
+    ({"name": "PC", "acquired_on": "2026-01-01", "cost": 250_000, "method": "lump3"}, "method"),  # 一括償却は20万円未満だけ
+    ({"name": "PC", "acquired_on": "2026-01-01", "cost": 250_000, "useful_life": 1}, "useful_life"),
+    ({"name": "", "acquired_on": "2026-01-01", "cost": 250_000}, "name"),
+])
+def test_減価償却のおかしな登録は理由を伝えて断る(app_con, payload, field):
+    from shinkoku import depreciation, ledger
+
+    with db.as_user(app_con, ALICE):
+        with pytest.raises(ledger.ValidationError) as err:
+            depreciation.create_asset(app_con, ALICE, payload)
+    assert field in [d["field"] for d in err.value.details]

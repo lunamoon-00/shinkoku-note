@@ -228,3 +228,20 @@ test("確定申告の準備：社会保険料を入れて保存すると、税�
   await expect(page.getByRole("heading", { name: "申告の日に入れる数字" })).toBeVisible();
   await expect(page.getByText("源泉徴収税額")).toBeVisible();
 });
+
+test("減価償却：パソコンを登録すると、その年の経費に入る。印刷ボタンもある", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/tax/");
+  // 「売上と経費」は最初から開いている
+  await page.getByLabel("名前", { exact: true }).fill("ノートパソコン");
+  await page.getByLabel("買った値段").fill("50000");
+  await page.getByRole("button", { name: "＋ 登録する" }).click();
+  await expect(page.getByText(/10万円未満のものは/)).toBeVisible();   // 10万円未満は断る
+  await page.getByLabel("買った値段").fill("240000");
+  await page.getByLabel("使い始めた日").fill(`${new Date().getFullYear()}-01-01`);
+  await page.getByRole("button", { name: "＋ 登録する" }).click();
+  await expect(page.getByText("耐用年数4年")).toBeVisible();
+  await expect(page.getByText("60,000円").first()).toBeVisible();      // 240,000 × 0.250
+  await expect(page.getByRole("button", { name: "🖨️ 印刷・PDFで保存" })).toBeVisible();
+});
