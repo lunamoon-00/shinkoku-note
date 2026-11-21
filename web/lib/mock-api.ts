@@ -2,7 +2,7 @@
 // データはタブを閉じるまで残る（sessionStorage）。
 
 import accountsJson from "./mock-accounts.json";
-import type { Account, CsvRow, Entry, EntryInput, FixedAsset, Profile, RecurringRule, TaxInputs } from "./types";
+import type { Account, CsvRow, Entry, EntryInput, FixedAsset, InvoiceSettings, Profile, RecurringRule, TaxInputs } from "./types";
 
 const accounts = accountsJson as Account[];
 const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -16,6 +16,7 @@ interface Db {
   freee?: { sources: string[] };
   tax?: Record<string, TaxInputs>;
   assets?: FixedAsset[];
+  invoice?: InvoiceSettings;
 }
 
 const KEY = "shinkoku-mock-db";
@@ -325,9 +326,24 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
           prepaid_tax: 0, payable: balance > 0 ? Math.floor(balance / 100) * 100 : 0, refund: balance < 0 ? -balance : 0,
           deductions, notes: [],
         },
+        consumption: db.invoice?.registered ? (() => {
+          const base = Math.floor((revenue * 100) / 110 / 1000) * 1000;
+          const national = Math.floor((base * 78) / 1000);
+          const deduction = Math.floor((national * 80) / 100);
+          const pn = Math.floor((national - deduction) / 100) * 100;
+          const pl = Math.floor((pn * 22) / 78 / 100) * 100;
+          return { method: "two_tenths", taxable_sales: revenue, tax_base: base, national_tax: national, deduction,
+            payable_national: pn, payable_local: pl, payable_total: pn + pl, notes: [], registered_on: db.invoice!.registered_on, category_label: null };
+        })() : null,
         sources: { basic_deduction: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1199.htm" },
       });
     }
+    case "GET /invoice":
+      return json(200, db.invoice ?? { registered: false, registration_number: null, registered_on: null, method: "two_tenths", business_category: null });
+    case "PUT /invoice":
+      db.invoice = body as InvoiceSettings;
+      save(db);
+      return json(200, db.invoice);
     case "POST /assets": {
       const a = { ...(body as Omit<FixedAsset, "id">), id: crypto.randomUUID(), disposed_on: null } as FixedAsset;
       if (a.method === "straight" && a.cost < 100_000) {

@@ -48,3 +48,6 @@ grant select, insert, update, delete on fixed_assets to shinkoku_app;
 
 -- 0011: 写真から読み取った控除証明書
 grant select, insert, delete on tax_documents to shinkoku_app;
+
+-- 0012: インボイス
+grant select, insert, update on invoice_settings to shinkoku_app;

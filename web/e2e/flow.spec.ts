@@ -237,11 +237,35 @@ test("減価償却：パソコンを登録すると、その年の経費に入�
   await page.getByLabel("名前", { exact: true }).fill("ノートパソコン");
   await page.getByLabel("買った値段").fill("50000");
   await page.getByRole("button", { name: "＋ 登録する" }).click();
-  await expect(page.getByText(/10万円未満のものは/)).toBeVisible();   // 10万円未満は断る
+  await expect(page.getByText(/10万円未満のものは/).first()).toBeVisible();   // 10万円未満は断る
   await page.getByLabel("買った値段").fill("240000");
   await page.getByLabel("使い始めた日").fill(`${new Date().getFullYear()}-01-01`);
   await page.getByRole("button", { name: "＋ 登録する" }).click();
   await expect(page.getByText("耐用年数4年")).toBeVisible();
   await expect(page.getByText("60,000円").first()).toBeVisible();      // 240,000 × 0.250
   await expect(page.getByRole("button", { name: "🖨️ 印刷・PDFで保存" })).toBeVisible();
+});
+
+
+test("インボイス：設定でチェックすると、確定申告の準備に消費税（2割特例）が出る", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/record/");
+  await page.getByText("報酬が入った", { exact: true }).click();
+  await page.getByLabel("報酬はいくら？").fill("1100000");
+  await page.getByLabel("実際に振り込まれたのはいくら？").fill("1100000");
+  await page.getByRole("button", { name: /記録する/ }).click();
+  await expect(page.getByText("記録しました")).toBeVisible();
+
+  await page.goto("/settings/");
+  await page.getByRole("checkbox", { name: "インボイス登録している" }).check();
+  await page.getByLabel("登録番号").fill("T1234567890123");
+  await page.getByLabel("登録日").fill(`${new Date().getFullYear()}-01-01`);
+  await page.getByRole("button", { name: "インボイスの設定を保存する" }).click();
+  await expect(page.getByText("保存しました")).toBeVisible();
+
+  await page.goto("/tax/");
+  await expect(page.getByRole("heading", { name: "消費税（インボイス）" })).toBeVisible();
+  // 1,100,000 → 課税標準 1,000,000 → 78,000 → 2割特例で 15,600 → 地方 4,400 → 合計 20,000
+  await expect(page.getByText("20,000円").first()).toBeVisible();
 });

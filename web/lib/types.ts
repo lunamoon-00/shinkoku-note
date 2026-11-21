@@ -220,5 +220,28 @@ export interface TaxOverview {
   white_lines: { line: string; amount: number }[];
   checklist: { key: string; label: string; done: boolean; warn: string }[];
   result: TaxResult;
+  consumption: ConsumptionResult | null;
   sources: Record<string, string>;
+}
+
+export interface InvoiceSettings {
+  registered: boolean;
+  registration_number: string | null;
+  registered_on: string | null;
+  method: "two_tenths" | "simplified" | "standard";
+  business_category: number | null;
+}
+
+export interface ConsumptionResult {
+  method: InvoiceSettings["method"];
+  taxable_sales: number;
+  tax_base: number;
+  national_tax: number;
+  deduction: number;
+  payable_national: number;
+  payable_local: number;
+  payable_total: number;
+  notes: string[];
+  registered_on: string;
+  category_label: string | null;
 }

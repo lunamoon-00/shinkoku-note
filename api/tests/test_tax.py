@@ -189,7 +189,7 @@ def test_住宅ローン控除と予定納税(rules):
 
 def test_DBのルールには_2025年と2026年の全部の項目と出典がある(database):
     rows = database.run("select year, count(*), count(*) filter (where source_url like 'https://%') from tax_rules group by year order by year")
-    assert rows == [[2025, 22, 22], [2026, 22, 22]]
+    assert rows == [[2025, 23, 23], [2026, 23, 23]]
 
 
 # ───────── 帳簿・入力とつないだ計算 ─────────

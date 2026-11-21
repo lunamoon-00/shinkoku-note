@@ -349,6 +349,8 @@ export class ShinkokuStack extends Stack {
       ["/assets", apigw.HttpMethod.GET],
       ["/assets", apigw.HttpMethod.POST],
       ["/assets/{id}", apigw.HttpMethod.DELETE],
+      ["/invoice", apigw.HttpMethod.GET],
+      ["/invoice", apigw.HttpMethod.PUT],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });
