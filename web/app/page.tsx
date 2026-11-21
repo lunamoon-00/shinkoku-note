@@ -71,6 +71,15 @@ function Home() {
 
           <ButtonLink href="/record/" full>＋ 記録する</ButtonLink>
 
+          <Link href="/tax/" className="flex items-center gap-3 rounded-[var(--radius-card)] bg-surface p-4 shadow-card transition hover:bg-surface-2">
+            <span aria-hidden className="text-2xl">📋</span>
+            <span className="flex-1">
+              <span className="block font-bold">確定申告の準備</span>
+              <span className="block text-sm text-sub">控除や家族を入れると、税金のめやすがわかります</span>
+            </span>
+            <span aria-hidden className="text-sub">›</span>
+          </Link>
+
           <Card>
             <div className="mb-1 flex items-center justify-between">
               <h2 className="font-bold">最近の記録</h2>

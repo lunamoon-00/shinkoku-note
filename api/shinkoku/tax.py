@@ -94,6 +94,23 @@ def earthquake_deduction(eq: dict, cap: int) -> int:
     return min(quake + old, cap)
 
 
+# ───────── お給料（国税庁 No.1410） ─────────
+def salary_income(rule: dict, gross: int) -> int:
+    """給与の収入金額（源泉徴収票の支払金額）→ 給与所得の金額"""
+    if gross <= rule["flat_upto"]:
+        return max(0, gross - rule["flat"])
+    for upper, amount in rule["special"]:
+        if gross <= upper:
+            return amount
+    if gross < 6_600_000:
+        a = gross // 4000 * 4000  # 所得税法別表第五：4,000円未満を切り捨てた額で計算する
+        deduction = a * 30 // 100 + 80_000 if a <= 3_600_000 else a * 20 // 100 + 440_000
+        return a - deduction
+    if gross < 8_500_000:
+        return gross * 90 // 100 - 1_100_000
+    return gross - 1_950_000
+
+
 # ───────── 計算 ─────────
 @dataclass
 class Result:
@@ -125,14 +142,28 @@ def calculate(year: int, rules: dict, books: dict, inputs: dict) -> Result:
     L.update(revenue=revenue, expense=expense, business_income_before_senjusha=before,
              senjusha_deduction=senjusha, business_income=business)
 
-    # 2. 合計所得金額（事業の赤字は、ほかの所得と差し引ける）
+    # 2. お給料と合計所得金額（事業の赤字は、ほかの所得と差し引ける）
+    salary = 0
+    salary_withheld = salary_social = 0
+    gross_total = 0
+    for s in inputs.get("salaries", []):
+        override = s.get("income_after_deduction")
+        if override:
+            salary += int(override)  # 源泉徴収票の「給与所得控除後の金額」を優先
+        else:
+            gross_total += int(s.get("gross", 0))  # 2枚以上あるときは、支払金額を合計してから表をあてる（No.1410 注4）
+        salary_withheld += int(s.get("withheld", 0))
+        salary_social += int(s.get("social_insurance", 0))
+    if gross_total:
+        salary += salary_income(rules["salary"], gross_total)
     other = sum(max(0, int(o.get("income", 0))) for o in inputs.get("other_incomes", []))
-    total_income = max(0, business + other)
-    L.update(other_income=other, total_income=total_income)
+    total_income = max(0, business + salary + other)
+    L.update(salary_income=salary, other_income=other, total_income=total_income)
 
     # 3. 所得控除
     D = r.deductions
-    D["social_insurance"] = int(inputs.get("social_insurance", 0))
+    # 社会保険料：自分で払った分（国保・国民年金など）＋ お給料から引かれていた分（源泉徴収票）
+    D["social_insurance"] = int(inputs.get("social_insurance", 0)) + salary_social
     D["small_business"] = int(inputs.get("small_business_mutual_aid", 0))
 
     young_dep = bool(rules.get("life_insurance_young_dependent")) and any(
@@ -221,7 +252,7 @@ def calculate(year: int, rules: dict, books: dict, inputs: dict) -> Result:
              reconstruction_tax=reconstruction, total_tax=base_tax + reconstruction)
 
     # 8. 源泉徴収・予定納税を引く
-    withheld = books.get("withholding", 0) + int(inputs.get("withholding_extra", 0))
+    withheld = books.get("withholding", 0) + int(inputs.get("withholding_extra", 0)) + salary_withheld
     prepaid = int(inputs.get("prepaid_tax", 0))
     balance = base_tax + reconstruction - withheld - prepaid
     L.update(withholding=withheld, prepaid_tax=prepaid)

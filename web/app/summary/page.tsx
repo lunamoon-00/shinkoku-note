@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { YearPicker } from "@/components/entry-list";
 import { RequireSession } from "@/components/session";
@@ -55,7 +56,7 @@ function SummaryView() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <PageTitle title="集計" lead="確定した記録だけを、科目ごとに合計しています" />
+        <PageTitle title="集計" lead={<>確定した記録だけを、科目ごとに合計しています。<Link href="/tax/" className="font-bold text-accent">確定申告の準備へ ›</Link></>} />
         <YearPicker year={year} onChange={setYear} />
       </div>
       {state.status === "loading" && <div className="py-10 text-center text-sub"><Spinner label="読みこんでいます…" /></div>}

@@ -2,7 +2,7 @@
 // データはタブを閉じるまで残る（sessionStorage）。
 
 import accountsJson from "./mock-accounts.json";
-import type { Account, CsvRow, Entry, EntryInput, Profile, RecurringRule } from "./types";
+import type { Account, CsvRow, Entry, EntryInput, Profile, RecurringRule, TaxInputs } from "./types";
 
 const accounts = accountsJson as Account[];
 const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -14,6 +14,7 @@ interface Db {
   imports?: Record<string, { source: string; rows: CsvRow[]; done: boolean }>;
   recurring?: RecurringRule[];
   freee?: { sources: string[] };
+  tax?: Record<string, TaxInputs>;
 }
 
 const KEY = "shinkoku-mock-db";
@@ -98,7 +99,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
   }
   const url = new URL(path, "http://mock");
   const db = load();
-  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}").replace(/\/recurring\/[^/]+/, "/recurring/{id}")}`;
+  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}").replace(/\/recurring\/[^/]+/, "/recurring/{id}").replace(/\/tax\/\d+/, "/tax/{year}")}`;
   const status = url.searchParams.get("status");
   const id = decodeURIComponent(url.pathname.split("/")[2] ?? "");
   const year = Number(url.searchParams.get("year") ?? new Date().getFullYear());
@@ -278,6 +279,45 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       return json(204, null);
     case "GET /entries/{id}/freee":
       return json(200, { sync: db.freee ? { status: "sent", error: "", kind: "deal", freee_id: 1 } : null });
+    case "GET /tax/{year}":
+    case "PUT /tax/{year}/inputs": {
+      // お試しモードのかんたんな計算（本物は api/shinkoku/tax.py。ここは画面の確認用）
+      const y = String(url.pathname.split("/")[2]);
+      if (route.startsWith("PUT")) {
+        db.tax = { ...(db.tax ?? {}), [y]: body as TaxInputs };
+        save(db);
+      }
+      const inputs = db.tax?.[y] ?? {};
+      const entries = db.entries.filter((e) => e.status === "confirmed" && e.entry_date.startsWith(`${y}-`));
+      const sum = (f: (l: Entry["lines"][number]) => boolean) => entries.flatMap((e) => e.lines).filter(f).reduce((s, l) => s + l.amount, 0);
+      const revenue = sum((l) => l.side === "credit" && l.account_code.startsWith("4"));
+      const expense = sum((l) => l.side === "debit" && l.account_code.startsWith("5"));
+      const withholding = sum((l) => l.tag === "withholding");
+      const income = Math.max(0, revenue - expense);
+      const deductions = { social_insurance: inputs.social_insurance ?? 0, donation: Math.max(0, (inputs.donations ?? 0) - 2000), basic: 1_040_000 };
+      const total = Object.values(deductions).reduce((s, v) => s + v, 0);
+      const taxable = Math.floor(Math.max(0, income - total) / 1000) * 1000;
+      const tax = Math.floor(taxable * 0.05);
+      const rec = Math.floor((tax * 21) / 1000);
+      const balance = tax + rec - withholding;
+      const checked = inputs.checked ?? {};
+      const labels: Record<string, string> = { books: "売上と経費の記録", social_insurance: "健康保険・年金など", family: "家族" };
+      return json(200, {
+        inputs,
+        books: { revenue, expense, withholding },
+        white_lines: [{ line: "売上（収入）金額", amount: revenue }, { line: "消耗品費", amount: expense }],
+        checklist: [{ key: "drafts", label: "確認待ちの記録をぜんぶ確定した", done: true, warn: "" },
+          ...Object.entries(labels).map(([key, label]) => ({ key, label, done: !!checked[key], warn: "" }))],
+        result: {
+          year: Number(y), revenue, expense, business_income_before_senjusha: income, senjusha_deduction: 0, business_income: income, salary_income: 0,
+          other_income: 0, total_income: income, total_deductions: total, taxable_income: taxable, tax_rate_percent: taxable ? 5 : 0,
+          income_tax: tax, tax_credits: 0, base_income_tax: tax, reconstruction_tax: rec, total_tax: tax + rec, withholding,
+          prepaid_tax: 0, payable: balance > 0 ? Math.floor(balance / 100) * 100 : 0, refund: balance < 0 ? -balance : 0,
+          deductions, notes: [],
+        },
+        sources: { basic_deduction: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1199.htm" },
+      });
+    }
     case "GET /review":
       return json(200, { count: db.entries.filter((e) => e.status === "draft").length });
     case "GET /line":
