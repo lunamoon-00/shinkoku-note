@@ -109,3 +109,24 @@ export interface RecurringRule {
 }
 
 export type RecurringInput = Omit<RecurringRule, "id" | "active" | "monthly_expense">;
+
+export type FreeeSource = "receipt" | "recurring" | "manual" | "csv";
+
+export type FreeeStatus =
+  | { connected: false }
+  | {
+      connected: true;
+      company_id: number;
+      company_name: string;
+      connected_at: string;
+      send_sources: FreeeSource[];
+      counts: { pending: number; sent: number; failed: number; skipped: number };
+      problems: { entry_id: string; error: string; entry_date: string | null; partner: string }[];
+    };
+
+export interface FreeeEntrySync {
+  status: "pending" | "sent" | "failed" | "skipped";
+  error: string;
+  kind: "deal" | "manual_journal" | null;
+  freee_id: number | null;
+}

@@ -206,6 +206,49 @@ export class ShinkokuStack extends Stack {
       timeout: Duration.minutes(5),
     });
 
+    // ───────── freee 連携（Phase 5） ─────────
+    // freee の鍵（トークン）は、利用者ごとにパラメータストアへ暗号化してしまう。読み書きできるのはこの場所だけ
+    const freeeTokens = new iam.PolicyStatement({
+      actions: ["ssm:GetParameter", "ssm:PutParameter", "ssm:DeleteParameter"],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/shinkoku/freee/tokens/*`],
+    });
+    const freeeApp = readParams("/shinkoku/freee/client-id", "/shinkoku/freee/client-secret");
+
+    const freeeDlq = new sqs.Queue(this, "FreeeDlq", { retentionPeriod: Duration.days(14), enforceSSL: true });
+    const freeeQueue = new sqs.Queue(this, "FreeeQueue", {
+      visibilityTimeout: Duration.minutes(12), // 送る係の時間切れ（2分）の6倍
+      enforceSSL: true,
+      deadLetterQueue: { queue: freeeDlq, maxReceiveCount: 3 },
+    });
+
+    // freee に送る係：「この人の分を送って」を受け取って、送る予定の記録を freee に送る
+    const freeeFn = new lambda.Function(this, "FreeeSyncFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      code,
+      handler: "shinkoku.freee_worker.handler",
+      memorySize: 512,
+      timeout: Duration.minutes(2),
+      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "45", UPLOADS_BUCKET: uploadsBucket.bucketName },
+      logGroup: new logs.LogGroup(this, "FreeeSyncLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    freeeFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    freeeFn.addToRolePolicy(freeeTokens);
+    freeeFn.addToRolePolicy(freeeApp);
+    uploadsBucket.grantRead(freeeFn, "receipts/*"); // レシートの写真を freee のファイルボックスに送る
+    freeeFn.addEventSource(new SqsEventSource(freeeQueue, { batchSize: 1, reportBatchItemFailures: true }));
+
+    // 記録を変える係（API・レシートの読み取り係）は、送る係を起こせるようにする
+    for (const fn of [apiFn, workerFn]) {
+      freeeQueue.grantSendMessages(fn);
+      fn.addEnvironment("FREEE_QUEUE_URL", freeeQueue.queueUrl);
+    }
+    apiFn.addToRolePolicy(freeeTokens); // つないだときに鍵をしまう・やめるときに消す
+    apiFn.addToRolePolicy(freeeApp);
+
     // ───────── 目覚まし（4c）：毎朝のくり返し記録・毎週の確認待ちお知らせ ─────────
     const schedulerFn = new lambda.Function(this, "SchedulerFunction", {
       runtime: lambda.Runtime.PYTHON_3_13,
@@ -222,6 +265,12 @@ export class ShinkokuStack extends Stack {
     });
     schedulerFn.addToRolePolicy(dbConnect(DB_APP_USER));
     schedulerFn.addToRolePolicy(readParams("/shinkoku/line/channel-access-token"));
+    // 毎朝、freee への送り残しも送る（送る係と同じ権限）
+    schedulerFn.addToRolePolicy(freeeTokens);
+    schedulerFn.addToRolePolicy(freeeApp);
+    uploadsBucket.grantRead(schedulerFn, "receipts/*");
+    schedulerFn.addEnvironment("UPLOADS_BUCKET", uploadsBucket.bucketName);
+    schedulerFn.addEnvironment("FREEE_QUEUE_URL", freeeQueue.queueUrl);
 
     // 時間は日本時間で決める（AWS はふだん世界標準時だが、Scheduler はタイムゾーンを指定できる）
     new scheduler.Schedule(this, "RecurringDaily", {
@@ -288,10 +337,20 @@ export class ShinkokuStack extends Stack {
       ["/recurring", apigw.HttpMethod.POST],
       ["/recurring/{id}/active", apigw.HttpMethod.PUT],
       ["/recurring/{id}", apigw.HttpMethod.DELETE],
+      ["/freee", apigw.HttpMethod.GET],
+      ["/freee", apigw.HttpMethod.DELETE],
+      ["/freee/connect", apigw.HttpMethod.POST],
+      ["/freee/sources", apigw.HttpMethod.PUT],
+      ["/entries/{id}/freee", apigw.HttpMethod.GET],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });
     }
+
+    // freee の許可画面からもどってくる入口。ログインは無いかわりに、1回きり・10分の合言葉（state）を必ず確かめる
+    httpApi.addRoutes({ path: "/freee/callback", methods: [apigw.HttpMethod.GET], integration });
+    apiFn.addEnvironment("FREEE_REDIRECT_URI", `${httpApi.apiEndpoint}/freee/callback`);
+    apiFn.addEnvironment("WEB_URL", ALLOWED_ORIGINS[0]); // つないだあとにもどる画面（CloudFront ができたら差しかえる）
 
     // LINE からの通知の入口。ログインは無いかわりに、受け取り係が LINE の署名を必ず確かめる
     httpApi.addRoutes({

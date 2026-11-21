@@ -10,7 +10,7 @@ import json
 import os
 import traceback
 
-from . import db, gemini, line, receipts
+from . import db, freee_worker, gemini, line, receipts
 
 MAX_ATTEMPTS = 3
 
@@ -58,7 +58,9 @@ def process(msg: dict, store=_s3_store, reader=gemini.read_receipt) -> receipts.
     if not mime:
         return receipts.Outcome("not_receipt", "写真の形式が読めませんでした。JPEG か PNG で送ってね")
     with db.as_user(con, user_id):
-        return receipts.process_receipt(con, user_id, image, mime, via="line", store=store, reader=reader)
+        outcome = receipts.process_receipt(con, user_id, image, mime, via="line", store=store, reader=reader)
+    outcome.entry_user = user_id
+    return outcome
 
 
 def handler(event, context):  # Lambda の入口（SQS）
@@ -69,6 +71,8 @@ def handler(event, context):  # Lambda の入口（SQS）
         try:
             outcome = process(msg)
             line.reply_or_push(msg.get("reply_token"), msg["line_user_id"], [line.text(outcome.message)])
+            if outcome.entry:
+                freee_worker.kick_if_pending(db.shared_connection(), outcome.entry_user)
             print(json.dumps({"status": outcome.status, "attempt": attempt}))
         except Exception:
             traceback.print_exc()

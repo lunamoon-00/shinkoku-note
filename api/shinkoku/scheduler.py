@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import traceback
 
-from . import db, line, recurring
+from . import db, freee_worker, line, recurring
 
 
 def _all(con, sql: str) -> list:
@@ -37,6 +37,22 @@ def run_recurring(con, today) -> dict:
     return {"users": len(users), "created": created, "failed": failed}
 
 
+def sweep_freee(con, sync=None) -> dict:
+    """freee に送れていない記録の見回り（送る係が起こせなかった分・失敗した分をやりなおす）"""
+    sync = sync or freee_worker.sync
+    users = [u for (u,) in _all(con, "select * from users_with_pending_freee()")]
+    sent = failed = 0
+    for user_id in users:
+        try:
+            r = sync(user_id)
+            sent += r["sent"]
+            failed += r["failed"]
+        except Exception:
+            failed += 1
+            traceback.print_exc()
+    return {"freee_users": len(users), "freee_sent": sent, "freee_failed": failed}
+
+
 def send_review_reminders(con) -> dict:
     rows = _all(con, "select user_id, line_user_id, drafts from users_to_remind()")
     sent = failed = 0
@@ -58,6 +74,7 @@ def handler(event, context):  # Lambda の入口
     con = db.shared_connection()
     if task == "recurring":
         result = run_recurring(con, recurring.today_jst())
+        result.update(sweep_freee(con))  # 朝の記録のあとに、freee への送り残しも送る
     elif task == "review_reminder":
         result = send_review_reminders(con)
     else:

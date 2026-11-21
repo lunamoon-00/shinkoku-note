@@ -31,6 +31,7 @@ class Outcome:
     status: str  # auto_confirmed / needs_review / duplicate / not_receipt
     message: str  # LINE で返す文
     entry: dict | None = None
+    entry_user: str = ""  # だれの記録か（freee に送る係を起こすため）
 
 
 def partner_key(name: str) -> str:

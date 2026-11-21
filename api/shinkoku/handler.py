@@ -15,7 +15,7 @@ import pg8000.exceptions
 
 import os
 
-from . import csv_import, db, ledger, receipts, recurring
+from . import csv_import, db, freee_api, freee_sync, freee_worker, ledger, receipts, recurring
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -145,6 +145,18 @@ def route(con, user_id: str, event: dict):
     if key == "DELETE /recurring/{id}":
         recurring.delete_rule(con, user_id, path.get("id", ""))
         return 204, None
+    if key == "GET /freee":
+        return 200, freee_sync.status(con)
+    if key == "POST /freee/connect":
+        return 200, {"url": freee_sync.start_connect(con, user_id)}
+    if key == "PUT /freee/sources":
+        return 200, freee_sync.set_sources(con, user_id, _body(event).get("sources"))
+    if key == "DELETE /freee":
+        freee_sync.disconnect(con, user_id, freee_api.TokenStore())
+        return 204, None
+    if key == "GET /entries/{id}/freee":
+        ledger.get_entry(con, path.get("id", ""))  # 自分の記録でなければ NotFound
+        return 200, {"sync": freee_sync.entry_sync(con, path.get("id", ""))}
     if key == "GET /review":
         return 200, {"count": ledger.review_count(con)}
     if key == "GET /line":
@@ -162,7 +174,30 @@ def route(con, user_id: str, event: dict):
     return 404, {"error": {"code": "NOT_FOUND", "message": "その窓口はありません", "details": []}}
 
 
+def _redirect(location: str) -> dict:
+    return {"statusCode": 302, "headers": {"location": location, "cache-control": "no-store"}}
+
+
+def freee_callback(event: dict) -> dict:
+    """freee の許可画面から戻ってきたところ（ログインの情報はないので、合言葉 state で本人を確かめる）"""
+    web = os.environ.get("WEB_URL", "http://localhost:3000")
+    q = event.get("queryStringParameters") or {}
+    if q.get("error") or not q.get("code") or not q.get("state"):
+        return _redirect(f"{web}/settings/?freee=cancelled")
+    try:
+        con = db.shared_connection()
+        freee_sync.finish_connect(con, q["state"], q["code"], freee_api.TokenStore())
+        return _redirect(f"{web}/settings/?freee=connected")
+    except ledger.ValidationError:
+        return _redirect(f"{web}/settings/?freee=expired")
+    except Exception:
+        traceback.print_exc()
+        return _redirect(f"{web}/settings/?freee=error")
+
+
 def handler(event, context):  # Lambda の入口
+    if event.get("routeKey") == "GET /freee/callback":
+        return freee_callback(event)
     try:
         user_id = _user_id(event)
     except PermissionError:
@@ -188,6 +223,10 @@ def handler(event, context):  # Lambda の入口
     except Exception:
         traceback.print_exc()  # 中身は CloudWatch のログにだけ残す（画面には出さない）
         return _error(500, "INTERNAL", "うまくいきませんでした。時間をおいてもう一度ためしてください")
+
+    # 記録を変えたら、freee に送る予定がないか見て、あれば送る係を起こす
+    if not event.get("routeKey", "").startswith("GET ") and status < 400:
+        freee_worker.kick_if_pending(con, user_id)
 
     if status == 204:
         return {"statusCode": 204, "headers": {"cache-control": "no-store"}}

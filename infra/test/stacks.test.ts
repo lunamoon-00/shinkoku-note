@@ -40,9 +40,10 @@ describe("本体スタック", () => {
 
   it("API は LINE の入口以外すべてログインが必要（Cognito のトークンを確かめる）", () => {
     const routes = Object.values(template.findResources("AWS::ApiGatewayV2::Route"));
-    expect(routes.length).toBe(22);
+    expect(routes.length).toBe(28);
+    const publicRoutes = ["POST /line/webhook", "GET /freee/callback"]; // それぞれ署名・合言葉で本物か確かめる
     for (const route of routes) {
-      const expected = route.Properties.RouteKey === "POST /line/webhook" ? "NONE" : "JWT";
+      const expected = publicRoutes.includes(route.Properties.RouteKey) ? "NONE" : "JWT";
       expect([route.Properties.RouteKey, route.Properties.AuthorizationType ?? "NONE"]).toEqual([route.Properties.RouteKey, expected]);
     }
   });
@@ -55,6 +56,12 @@ describe("本体スタック", () => {
       BatchSize: 1,
       FunctionResponseTypes: ["ReportBatchItemFailures"],
     });
+  });
+
+  it("freee の鍵（トークン）は決まった場所にだけ書ける", () => {
+    const policies = JSON.stringify(template.findResources("AWS::IAM::Policy"));
+    expect(policies).toContain("parameter/shinkoku/freee/tokens/*");
+    expect(policies).toContain("ssm:PutParameter");
   });
 
   it("鍵はパラメータストアの決まった名前だけ読める", () => {
@@ -74,7 +81,7 @@ describe("本体スタック", () => {
     const fns = template.findResources("AWS::Lambda::Function", {
       Properties: { Runtime: "python3.13" },
     });
-    expect(Object.keys(fns).length).toBe(5); // API・マイグレーション・LINEの受け取り係・読み取り係・目覚まし係
+    expect(Object.keys(fns).length).toBe(6); // API・マイグレーション・LINEの受け取り係・読み取り係・目覚まし係・freeeに送る係
     for (const fn of Object.values(fns)) {
       expect(fn.Properties.Architectures).toEqual(["arm64"]);
     }

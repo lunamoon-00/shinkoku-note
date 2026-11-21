@@ -13,6 +13,7 @@ interface Db {
   lineLinked?: boolean;
   imports?: Record<string, { source: string; rows: CsvRow[]; done: boolean }>;
   recurring?: RecurringRule[];
+  freee?: { sources: string[] };
 }
 
 const KEY = "shinkoku-mock-db";
@@ -254,6 +255,29 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       db.recurring = (db.recurring ?? []).filter((r) => r.id !== id);
       save(db);
       return json(204, null);
+    case "GET /freee":
+      return json(200, db.freee
+        ? { connected: true, company_id: 1, company_name: "お試し事業所", connected_at: new Date().toISOString(),
+            send_sources: db.freee.sources, counts: { pending: 0, sent: 3, failed: 0, skipped: 0 }, problems: [] }
+        : { connected: false });
+    case "POST /freee/connect":
+      // お試しモードでは freee に行かず、すぐ「つながった」ことにして設定画面に戻る
+      db.freee = { sources: ["receipt", "recurring", "manual"] };
+      db.profile.mode = "freee";
+      save(db);
+      return json(200, { url: "/settings/?freee=connected" });
+    case "PUT /freee/sources":
+      if (!db.freee) return fail(404, "NOT_FOUND", "見つかりませんでした");
+      db.freee.sources = (body as { sources: string[] }).sources;
+      save(db);
+      return mockFetch("GET", "/freee");
+    case "DELETE /freee":
+      delete db.freee;
+      db.profile.mode = "in_app";
+      save(db);
+      return json(204, null);
+    case "GET /entries/{id}/freee":
+      return json(200, { sync: db.freee ? { status: "sent", error: "", kind: "deal", freee_id: 1 } : null });
     case "GET /review":
       return json(200, { count: db.entries.filter((e) => e.status === "draft").length });
     case "GET /line":

@@ -4,7 +4,7 @@
 import { auth } from "./auth";
 import { config } from "./config";
 import { mockFetch } from "./mock-api";
-import type { Account, CsvPreview, Entry, EntryInput, LineStatus, Profile, RecurringInput, RecurringRule, Summary } from "./types";
+import type { Account, CsvPreview, Entry, EntryInput, FreeeEntrySync, FreeeSource, FreeeStatus, LineStatus, Profile, RecurringInput, RecurringRule, Summary } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -97,6 +97,11 @@ export const api = {
   setRecurringActive: (id: string, active: boolean) =>
     request<{ rule: RecurringRule; created: number }>("PUT", `/recurring/${encodeURIComponent(id)}/active`, { active }),
   deleteRecurring: (id: string) => request<void>("DELETE", `/recurring/${encodeURIComponent(id)}`),
+  freeeStatus: () => request<FreeeStatus>("GET", "/freee"),
+  freeeConnect: () => request<{ url: string }>("POST", "/freee/connect").then((r) => r.url),
+  freeeSources: (sources: FreeeSource[]) => request<FreeeStatus>("PUT", "/freee/sources", { sources }),
+  freeeDisconnect: () => request<void>("DELETE", "/freee"),
+  freeeEntry: (id: string) => request<{ sync: FreeeEntrySync | null }>("GET", `/entries/${encodeURIComponent(id)}/freee`).then((r) => r.sync),
   previewCsv: (filename: string, contentBase64: string, source: "personal" | "business") =>
     request<CsvPreview>("POST", "/imports/csv", { filename, content_base64: contentBase64, source }),
   commitCsv: (importId: string, rows: { row_id: number; include: boolean; account_code: string }[]) =>
