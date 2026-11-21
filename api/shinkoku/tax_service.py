@@ -12,7 +12,7 @@ import json
 
 import pg8000.native
 
-from . import ledger, tax
+from . import certificates, depreciation, ledger, tax
 
 RELATIONS = ("spouse", "child", "parent", "other")
 # 「確認した」の印をつける項目（チェックリストに使う）
@@ -29,15 +29,17 @@ def rules_for(con: pg8000.native.Connection, year: int) -> tuple[dict, dict]:
     return {k: v for k, v, _ in rows}, {k: u for k, _, u in rows}
 
 
-def books(con: pg8000.native.Connection, year: int) -> dict:
+def books(con: pg8000.native.Connection, year: int, rules: dict | None = None) -> dict:
     s = ledger.summary(con, year)
+    dep = depreciation.for_year(con, year, rules["straight_line_rates"])["total"] if rules else 0
     withheld = con.run(
         "select coalesce(sum(l.amount), 0)::bigint from journal_lines l join journal_entries e on e.id = l.entry_id"
         " where l.tag = 'withholding' and e.status = 'confirmed'"
         "   and e.entry_date >= make_date(:y, 1, 1) and e.entry_date < make_date(:y + 1, 1, 1)",
         y=year,
     )[0][0]
-    return {"revenue": s["revenue"], "expense": s["expense"], "withholding": withheld}
+    # 経費には、登録した資産のその年の減価償却費（仕事の割合をかけた分）も入れる
+    return {"revenue": s["revenue"], "expense": s["expense"] + dep, "withholding": withheld, "depreciation": dep}
 
 
 def get_inputs(con: pg8000.native.Connection, year: int) -> dict:
@@ -156,13 +158,15 @@ def save_inputs(con: pg8000.native.Connection, user_id: str, year: int, payload:
     return clean
 
 
-def white_lines(con: pg8000.native.Connection, year: int) -> list[dict]:
-    """収支内訳書（一般用）の欄ごとの合計（確定した記録だけ）"""
+def white_lines(con: pg8000.native.Connection, year: int, dep_total: int = 0) -> list[dict]:
+    """収支内訳書（一般用）の欄ごとの合計（確定した記録だけ＋減価償却）"""
     s = ledger.summary(con, year)
     lines: dict[str, int] = {}
     for a in s["accounts"]:
         if a["white_line"]:
             lines[a["white_line"]] = lines.get(a["white_line"], 0) + a["balance"]
+    if dep_total:
+        lines["減価償却費"] = lines.get("減価償却費", 0) + dep_total
     return [{"line": k, "amount": v} for k, v in lines.items()]
 
 
@@ -204,13 +208,17 @@ def checklist(con: pg8000.native.Connection, year: int, inputs: dict, b: dict) -
 
 def compute(con: pg8000.native.Connection, year: int) -> dict:
     rules, sources = rules_for(con, year)
-    b = books(con, year)
+    b = books(con, year, rules)
     inputs = get_inputs(con, year)
-    result = tax.calculate(year, rules, b, inputs)
+    documents = certificates.list_documents(con, year)
+    # 計算には「手で入れた金額 ＋ 写真から読み取った金額」を使う（保存してある入力は手で入れた分だけ）
+    result = tax.calculate(year, rules, b, certificates.merge_inputs(inputs, documents))
     return {
         "inputs": inputs,
+        "documents": documents,
         "books": b,
-        "white_lines": white_lines(con, year),
+        "assets": depreciation.for_year(con, year, rules["straight_line_rates"])["items"],
+        "white_lines": white_lines(con, year, b["depreciation"]),
         "checklist": checklist(con, year, inputs, b),
         "result": result.to_dict(),
         "sources": sources,

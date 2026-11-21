@@ -154,7 +154,8 @@ def test_読み取り係が記録してLINEに返事する(app_con, fake_line, m
           "account_code": "5210", "confidence": 0.9, "tax_8": 0, "tax_10": 500, "invoice_number": "", "unclear": ""}
     stored = {}
     msg = {"line_user_id": LINE_ALICE, "message_id": "m2", "reply_token": "r2"}
-    out = worker.process(msg, store=lambda k, b, m: stored.update({k: b}), reader=lambda *_: ai)
+    out = worker.process(msg, store=lambda k, b, m: stored.update({k: b}), reader=lambda *_: ai,
+                         doc_reader=lambda *_: {"doc_type": "receipt"})
     assert out.status == "auto_confirmed"
     assert len(stored) == 1
 

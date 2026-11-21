@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { YearPicker } from "@/components/entry-list";
 import { RequireSession } from "@/components/session";
+import { AssetsEditor, DocumentsList } from "@/components/tax-extras";
 import { Button, Card, Choice, Field, Help, Money, Notice, PageTitle, Spinner, cx, inputClass } from "@/components/ui";
 import { useLoad } from "@/components/use-load";
 import { api, ApiError } from "@/lib/api";
@@ -41,7 +42,7 @@ function Section({ id, title, question, checked, onCheck, children, open, onTogg
   children: ReactNode; open: boolean; onToggle: () => void;
 }) {
   return (
-    <Card className="flex flex-col gap-4">
+    <Card className="flex flex-col gap-4 print:hidden">
       <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={`sec-${id}`} className="flex items-center gap-3 text-left">
         <span aria-hidden className={cx("grid size-7 shrink-0 place-items-center rounded-full text-sm font-bold", checked ? "bg-in text-on-accent" : "bg-surface-2 text-sub")}>
           {checked ? "✓" : "・"}
@@ -130,7 +131,7 @@ function Result({ data }: { data: TaxOverview }) {
         <h2 className="mb-2 font-bold">計算のながれ</h2>
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-[15px]">
           {[
-            ["売上（収入）", r.revenue], ["経費", -r.expense],
+            ["売上（収入）", r.revenue], [data.books.depreciation ? `経費（減価償却 ${yen(data.books.depreciation)} をふくむ）` : "経費", -r.expense],
             ...(r.senjusha_deduction ? [["事業専従者控除", -r.senjusha_deduction]] : []),
             ["事業所得", r.business_income],
             ...(r.salary_income ? [["給与所得", r.salary_income]] : []),
@@ -242,7 +243,7 @@ function Tax() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
         <PageTitle title="確定申告の準備" lead="質問に答えていくと、税金がその場で計算されます" />
         <YearPicker year={year} onChange={setYear} />
       </div>
@@ -257,7 +258,7 @@ function Tax() {
 
       {state.status === "ready" && live && (
         <>
-          <Card>
+          <Card className="print:hidden">
             <div className="mb-2 flex items-baseline justify-between">
               <h2 className="font-bold">申告チェックリスト</h2>
               <span className="num text-sm text-sub">{done} / {live.checklist.length}</span>
@@ -273,9 +274,19 @@ function Tax() {
             </ul>
           </Card>
 
+          <Card className="flex flex-col gap-3 print:hidden">
+            <h2 className="font-bold">写真から読み取った書類</h2>
+            <DocumentsList documents={live.documents} onChanged={reload} />
+          </Card>
+
           <Section {...sec("books")} title="売上と経費" question="今年の売上と経費は、ぜんぶ記録した？">
             <p>売上 <Money value={live.books.revenue} tone="in" />・経費 <Money value={live.books.expense} tone="out" />・源泉徴収された税金 <Money value={live.books.withholding} /></p>
             <Link href="/entries/" className="font-bold text-accent">記録の一覧を見る ›</Link>
+            <h3 className="mt-2 font-bold">
+              10万円以上のもの（減価償却）
+              <Help title="減価償却（げんかしょうきゃく）">10万円以上のパソコンなど、長く使うものは、買った年に全部を経費にせず、何年かに分けて経費にする決まりです。ここに登録すると、その年の分を自動で計算します。</Help>
+            </h3>
+            <AssetsEditor assets={live.assets} year={year} onChanged={reload} />
           </Section>
 
           <Section {...sec("salary")} title="お給料" question="今年、会社からお給料をもらった？（途中でやめた会社もふくむ）">
@@ -361,12 +372,16 @@ function Tax() {
           </Section>
 
           {message && <Notice tone={message.tone} title={message.text} />}
-          <div className="sticky bottom-20 z-10 sm:bottom-4">
+          <div className="sticky bottom-20 z-10 print:hidden sm:bottom-4">
             <Button onClick={() => void save()} loading={busy} full>保存して計算する</Button>
           </div>
 
-          <Result data={live} />
-          <Guide data={live} />
+          <div className="flex flex-col gap-5 print:gap-3">
+            <h2 className="hidden text-xl font-bold print:block">{year}年分 確定申告で入れる数字（申告ノート）</h2>
+            <Result data={live} />
+            <Guide data={live} />
+          </div>
+          <Button variant="secondary" className="print:hidden" onClick={() => window.print()}>🖨️ 印刷・PDFで保存</Button>
         </>
       )}
     </div>

@@ -109,3 +109,19 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 印刷・PDF：白い紙に黒い文字で、影はつけない */
+@media print {
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f4f4;
+    --text: #000000;
+    --sub: #444444;
+    --shadow: none;
+    color-scheme: light;
+  }
+  body {
+    font-size: 12pt;
+  }
+}

@@ -42,3 +42,9 @@ grant execute on function users_with_pending_freee() to shinkoku_app;
 -- 0008: 確定申告の計算
 grant select on tax_rules to shinkoku_app;
 grant select, insert, update on tax_inputs to shinkoku_app;
+
+-- 0010: 減価償却
+grant select, insert, update, delete on fixed_assets to shinkoku_app;
+
+-- 0011: 写真から読み取った控除証明書
+grant select, insert, delete on tax_documents to shinkoku_app;

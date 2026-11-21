@@ -188,9 +188,35 @@ export interface TaxResult {
   notes: string[];
 }
 
+export interface TaxDocument {
+  id: string;
+  kind: string;
+  label: string;
+  issuer: string;
+  amounts: Record<string, number>;
+  total: number;
+  created_at: string;
+}
+
+export interface FixedAsset {
+  id: string;
+  name: string;
+  acquired_on: string;
+  cost: number;
+  useful_life: number;
+  method: "straight" | "lump3";
+  business_ratio: number;
+  disposed_on: string | null;
+  depreciation?: number;
+  expense?: number;
+  book_value?: number | null;
+}
+
 export interface TaxOverview {
   inputs: TaxInputs;
-  books: { revenue: number; expense: number; withholding: number };
+  documents: TaxDocument[];
+  assets: FixedAsset[];
+  books: { revenue: number; expense: number; withholding: number; depreciation: number };
   white_lines: { line: string; amount: number }[];
   checklist: { key: string; label: string; done: boolean; warn: string }[];
   result: TaxResult;

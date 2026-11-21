@@ -2,7 +2,7 @@
 // データはタブを閉じるまで残る（sessionStorage）。
 
 import accountsJson from "./mock-accounts.json";
-import type { Account, CsvRow, Entry, EntryInput, Profile, RecurringRule, TaxInputs } from "./types";
+import type { Account, CsvRow, Entry, EntryInput, FixedAsset, Profile, RecurringRule, TaxInputs } from "./types";
 
 const accounts = accountsJson as Account[];
 const byCode = new Map(accounts.map((a) => [a.code, a]));
@@ -15,6 +15,7 @@ interface Db {
   recurring?: RecurringRule[];
   freee?: { sources: string[] };
   tax?: Record<string, TaxInputs>;
+  assets?: FixedAsset[];
 }
 
 const KEY = "shinkoku-mock-db";
@@ -99,7 +100,7 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
   }
   const url = new URL(path, "http://mock");
   const db = load();
-  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}").replace(/\/recurring\/[^/]+/, "/recurring/{id}").replace(/\/tax\/\d+/, "/tax/{year}")}`;
+  const route = `${method} ${url.pathname.replace(/\/entries\/[^/]+/, "/entries/{id}").replace(/\/imports\/(?!csv)[^/]+/, "/imports/{id}").replace(/\/recurring\/[^/]+/, "/recurring/{id}").replace(/\/tax\/documents\/[^/]+/, "/tax/documents/{id}").replace(/\/tax\/\d+/, "/tax/{year}").replace(/\/assets\/[^/]+/, "/assets/{id}")}`;
   const status = url.searchParams.get("status");
   const id = decodeURIComponent(url.pathname.split("/")[2] ?? "");
   const year = Number(url.searchParams.get("year") ?? new Date().getFullYear());
@@ -291,7 +292,14 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       const entries = db.entries.filter((e) => e.status === "confirmed" && e.entry_date.startsWith(`${y}-`));
       const sum = (f: (l: Entry["lines"][number]) => boolean) => entries.flatMap((e) => e.lines).filter(f).reduce((s, l) => s + l.amount, 0);
       const revenue = sum((l) => l.side === "credit" && l.account_code.startsWith("4"));
-      const expense = sum((l) => l.side === "debit" && l.account_code.startsWith("5"));
+      // お試しモードの減価償却：定額法4年（0.250）で、使い始めた月から年末まで
+      const assets = (db.assets ?? []).map((a) => {
+        const [ay, am] = a.acquired_on.split("-").map(Number);
+        const dep = a.method === "lump3" ? Math.floor(a.cost / 3) : Number(y) === ay ? Math.floor((a.cost * 250) / 1000 * (12 - am + 1) / 12) : Math.floor((a.cost * 250) / 1000);
+        return { ...a, depreciation: dep, expense: Math.floor((dep * a.business_ratio) / 100), book_value: null };
+      });
+      const depreciation = assets.reduce((s, a) => s + a.expense, 0);
+      const expense = sum((l) => l.side === "debit" && l.account_code.startsWith("5")) + depreciation;
       const withholding = sum((l) => l.tag === "withholding");
       const income = Math.max(0, revenue - expense);
       const deductions = { social_insurance: inputs.social_insurance ?? 0, donation: Math.max(0, (inputs.donations ?? 0) - 2000), basic: 1_040_000 };
@@ -304,7 +312,9 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
       const labels: Record<string, string> = { books: "売上と経費の記録", social_insurance: "健康保険・年金など", family: "家族" };
       return json(200, {
         inputs,
-        books: { revenue, expense, withholding },
+        documents: [],
+        assets,
+        books: { revenue, expense, withholding, depreciation },
         white_lines: [{ line: "売上（収入）金額", amount: revenue }, { line: "消耗品費", amount: expense }],
         checklist: [{ key: "drafts", label: "確認待ちの記録をぜんぶ確定した", done: true, warn: "" },
           ...Object.entries(labels).map(([key, label]) => ({ key, label, done: !!checked[key], warn: "" }))],
@@ -318,6 +328,21 @@ export async function mockFetch(method: string, path: string, body?: unknown): P
         sources: { basic_deduction: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1199.htm" },
       });
     }
+    case "POST /assets": {
+      const a = { ...(body as Omit<FixedAsset, "id">), id: crypto.randomUUID(), disposed_on: null } as FixedAsset;
+      if (a.method === "straight" && a.cost < 100_000) {
+        return fail(400, "VALIDATION", "入力を確かめてください", [{ field: "cost", message: "10万円未満のものは、買った年にふつうの経費として記録してね（減価償却はいりません）" }]);
+      }
+      db.assets = [...(db.assets ?? []), a];
+      save(db);
+      return json(201, a);
+    }
+    case "DELETE /assets/{id}":
+      db.assets = (db.assets ?? []).filter((a) => a.id !== id);
+      save(db);
+      return json(204, null);
+    case "DELETE /tax/documents/{id}":
+      return json(204, null);
     case "GET /review":
       return json(200, { count: db.entries.filter((e) => e.status === "draft").length });
     case "GET /line":

@@ -177,6 +177,7 @@ export class ShinkokuStack extends Stack {
       readParams("/shinkoku/line/channel-access-token", "/shinkoku/gemini/api-key"),
     );
     uploadsBucket.grantPut(workerFn, "receipts/*");
+    uploadsBucket.grantPut(workerFn, "certificates/*"); // 控除証明書などの写真（6b-2）
     workerFn.addEventSource(
       new SqsEventSource(receiptQueue, {
         batchSize: 1, // 1枚ずつ（失敗しても、ほかの写真に影響しない）
@@ -344,6 +345,10 @@ export class ShinkokuStack extends Stack {
       ["/entries/{id}/freee", apigw.HttpMethod.GET],
       ["/tax/{year}", apigw.HttpMethod.GET],
       ["/tax/{year}/inputs", apigw.HttpMethod.PUT],
+      ["/tax/documents/{id}", apigw.HttpMethod.DELETE],
+      ["/assets", apigw.HttpMethod.GET],
+      ["/assets", apigw.HttpMethod.POST],
+      ["/assets/{id}", apigw.HttpMethod.DELETE],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });
