@@ -17,6 +17,8 @@ export interface EntryLineInput {
   side: Side;
   account_code: string;
   amount: number;
+  /** "withholding" ＝ 源泉徴収された分（確定申告で使う） */
+  tag?: "withholding";
 }
 
 export interface EntryLine extends EntryLineInput {

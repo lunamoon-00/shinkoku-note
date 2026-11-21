@@ -74,6 +74,10 @@ def validate_entry(payload: dict, account_codes: set[str]) -> dict:
         side = line.get("side")
         code = str(line.get("account_code", ""))
         amount = line.get("amount")
+        tag = line.get("tag")
+        # 「源泉徴収された分」の印は、借方の事業主貸（1900）にだけつけられる
+        if tag is not None and not (tag == "withholding" and side == "debit" and code == "1900"):
+            errors.append(_err(f"lines[{i}].tag", "源泉徴収の印は、借方の「事業主貸」の行にだけつけられます"))
         if side not in SIDES:
             errors.append(_err(f"lines[{i}].side", "借方（debit）か貸方（credit）を選んでください"))
         if code not in account_codes:
@@ -83,7 +87,7 @@ def validate_entry(payload: dict, account_codes: set[str]) -> dict:
             errors.append(_err(f"lines[{i}].amount", "金額は1円以上の整数で入れてください"))
         elif amount > MAX_AMOUNT:
             errors.append(_err(f"lines[{i}].amount", "金額が大きすぎます。打ちまちがいがないか確かめてください"))
-        clean_lines.append({"side": side, "account_code": code, "amount": amount})
+        clean_lines.append({"side": side, "account_code": code, "amount": amount, "tag": tag})
 
     if not errors:
         debit = sum(line["amount"] for line in clean_lines if line["side"] == "debit")
@@ -127,9 +131,9 @@ def _audit(con: pg8000.native.Connection, user_id: str, action: str, target: str
 def _insert_lines(con: pg8000.native.Connection, user_id: str, entry_id: str, lines: list[dict]) -> None:
     for line in lines:
         con.run(
-            "insert into journal_lines (entry_id, user_id, side, account_code, amount)"
-            " values (:e, :u, :s, :c, :a)",
-            e=entry_id, u=user_id, s=line["side"], c=line["account_code"], a=line["amount"],
+            "insert into journal_lines (entry_id, user_id, side, account_code, amount, tag)"
+            " values (:e, :u, :s, :c, :a, :t)",
+            e=entry_id, u=user_id, s=line["side"], c=line["account_code"], a=line["amount"], t=line.get("tag"),
         )
 
 
@@ -216,16 +220,17 @@ def _with_lines(con: pg8000.native.Connection, rows: list) -> list[dict]:
         return []
     ids = [str(r[0]) for r in rows]
     line_rows = con.run(
-        "select l.entry_id, l.side, l.account_code, a.name, a.friendly_name, l.amount"
+        "select l.entry_id, l.side, l.account_code, a.name, a.friendly_name, l.amount, l.tag"
         " from journal_lines l join accounts a on a.code = l.account_code"
         " where l.entry_id = any(cast(:ids as uuid[])) order by l.entry_id, l.side desc, l.id",
         ids=ids,
     )
     lines_by_entry: dict[str, list[dict]] = {i: [] for i in ids}
-    for entry_id, side, code, name, friendly, amount in line_rows:
-        lines_by_entry[str(entry_id)].append(
-            {"side": side, "account_code": code, "account_name": name, "friendly_name": friendly, "amount": amount}
-        )
+    for entry_id, side, code, name, friendly, amount, tag in line_rows:
+        line = {"side": side, "account_code": code, "account_name": name, "friendly_name": friendly, "amount": amount}
+        if tag:
+            line["tag"] = tag
+        lines_by_entry[str(entry_id)].append(line)
     out = []
     for r in rows:
         eid = str(r[0])

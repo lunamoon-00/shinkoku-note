@@ -44,7 +44,7 @@ describe("報酬（報酬が入った）", () => {
     const input = toEntryInput(form);
     expect(input.lines).toEqual([
       { side: "debit", account_code: CODES.businessBank, amount: 89_790 },
-      { side: "debit", account_code: CODES.ownerDrawing, amount: 10_210 },
+      { side: "debit", account_code: CODES.ownerDrawing, amount: 10_210, tag: "withholding" },
       { side: "credit", account_code: CODES.sales, amount: 100_000 },
     ]);
     expect(balanced(input)).toBe(true);
@@ -54,12 +54,14 @@ describe("報酬（報酬が入った）", () => {
     expect(toEntryInput({ ...form, received: 100_000 }).lines).toHaveLength(2);
   });
 
-  it("個人の口座に入ったら、事業主貸にまとめる", () => {
+  it("個人の口座に入っても、源泉徴収の分は印つきで別の行にする", () => {
     const input = toEntryInput({ ...form, depositTo: "personal" });
     expect(input.lines).toEqual([
-      { side: "debit", account_code: CODES.ownerDrawing, amount: 100_000 },
+      { side: "debit", account_code: CODES.ownerDrawing, amount: 89_790 },
+      { side: "debit", account_code: CODES.ownerDrawing, amount: 10_210, tag: "withholding" },
       { side: "credit", account_code: CODES.sales, amount: 100_000 },
     ]);
+    expect(fromEntry(asEntry(input), expenseCodes)).toEqual({ ...form, depositTo: "personal" });
   });
 
   it("直すときは同じ入力にもどる", () => {
