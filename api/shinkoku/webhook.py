@@ -91,6 +91,10 @@ def handle_event(con_factory, ev: dict, enqueue=_enqueue) -> None:
 
 
 def handler(event, context):  # Lambda の入口（API Gateway の POST /line/webhook）
+    if event.get("warmup"):
+        # 5分ごとの「起こしておく」呼び出し。合言葉だけ読んでおけば、次の本物の通知がすぐ返せる
+        secrets.get("line_channel_secret")
+        return {"warmed": True}
     body = _raw_body(event)
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     if not line.verify_signature(body, headers.get("x-line-signature", ""), secrets.get("line_channel_secret")):

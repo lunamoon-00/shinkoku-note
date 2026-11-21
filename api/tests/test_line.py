@@ -178,3 +178,11 @@ def test_写真の種類を中身で見分ける():
     assert worker.mime_of(b"\xff\xd8\xff\xe0") == "image/jpeg"
     assert worker.mime_of(b"\x89PNG\r\n") == "image/png"
     assert worker.mime_of(b"%PDF-1.7") is None
+
+
+def test_温めておく呼び出しでは_合言葉を読むだけでDBにさわらない(monkeypatch):
+    def no_db(*a, **k):
+        raise AssertionError("DB にさわってはいけない")
+
+    monkeypatch.setattr(db, "shared_connection", no_db)
+    assert webhook.handler({"warmup": True}, None) == {"warmed": True}

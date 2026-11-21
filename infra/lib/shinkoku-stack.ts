@@ -3,12 +3,15 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, TimeZone, type StackProps } 
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as sns from "aws-cdk-lib/aws-sns";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -369,6 +372,59 @@ export class ShinkokuStack extends Stack {
     });
 
     // ───────── 次の Phase で使う値を表示 ─────────
+    // ───────── 見張り（Phase 7）：おかしなことが起きたらメールで知らせる ─────────
+    // メールアドレスは公開リポジトリに書かないので、受け取りの登録は AWS の画面（SNS）で手でする
+    const alerts = new sns.Topic(this, "Alerts", { topicName: "shinkoku-alerts", displayName: "申告ノートのお知らせ" });
+    const notify = new cwActions.SnsAction(alerts);
+    const watched: [string, lambda.Function][] = [
+      ["API", apiFn], ["LINEの受け取り係", webhookFn], ["レシートの読み取り係", workerFn],
+      ["freeeに送る係", freeeFn], ["目覚まし係", schedulerFn], ["マイグレーション", migrateFn],
+    ];
+    for (const [label, fn] of watched) {
+      const alarm = new cloudwatch.Alarm(this, `${fn.node.id}Errors`, {
+        alarmDescription: `${label}でエラーが起きました（CloudWatch のログを見てね）`,
+        metric: fn.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      alarm.addAlarmAction(notify);
+    }
+    for (const [label, dlq] of [["レシートの読み取り", receiptDlq], ["freeeへの送信", freeeDlq]] as const) {
+      new cloudwatch.Alarm(this, `${dlq.node.id}Messages`, {
+        alarmDescription: `${label}で、何回やっても失敗したものが失敗の置き場（DLQ）にたまっています`,
+        metric: dlq.metricApproximateNumberOfMessagesVisible({ period: Duration.minutes(5), statistic: "Maximum" }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(notify);
+    }
+    new cloudwatch.Alarm(this, "Api5xx", {
+      alarmDescription: "API がサーバーのエラー（5xx）を5分で5回以上返しました",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/ApiGateway", metricName: "5xx", dimensionsMap: { ApiId: httpApi.apiId },
+        period: Duration.minutes(5), statistic: "Sum",
+      }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(notify);
+
+    // LINE の受け取り係を5分ごとに軽く起こしておく（最初の1回が遅くて LINE が待ちきれないのを防ぐ）
+    new scheduler.Schedule(this, "LineWebhookWarmup", {
+      scheduleName: "shinkoku-line-webhook-warmup",
+      description: "5分ごと：LINE の受け取り係を起こしておく（DB にはさわらない）",
+      schedule: scheduler.ScheduleExpression.rate(Duration.minutes(5)),
+      target: new schedulerTargets.LambdaInvoke(webhookFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({ warmup: true }),
+        retryAttempts: 0,
+      }),
+    });
+
+    new CfnOutput(this, "AlertsTopicArn", { value: alerts.topicArn, description: "ここにメールを登録すると、お知らせが届く" });
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
     new CfnOutput(this, "LineWebhookUrl", {
       value: `${httpApi.apiEndpoint}/line/webhook`,

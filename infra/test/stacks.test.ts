@@ -111,6 +111,23 @@ describe("本体スタック", () => {
     });
   });
 
+  it("見張り：Lambda 6つのエラー・失敗の置き場2つ・API の 5xx をメールで知らせる", () => {
+    template.resourceCountIs("AWS::SNS::Topic", 1);
+    const alarms = Object.values(template.findResources("AWS::CloudWatch::Alarm"));
+    expect(alarms.length).toBe(9);
+    for (const a of alarms) {
+      expect(a.Properties.AlarmActions).toHaveLength(1);
+      expect(a.Properties.TreatMissingData).toBe("notBreaching");
+    }
+  });
+
+  it("LINE の受け取り係を5分ごとに温めておく", () => {
+    template.hasResourceProperties("AWS::Scheduler::Schedule", {
+      ScheduleExpression: "rate(5 minutes)",
+      Target: Match.objectLike({ Input: JSON.stringify({ warmup: true }) }),
+    });
+  });
+
   it("公開のたびにマイグレーションを自動で流す", () => {
     template.resourceCountIs("Custom::Trigger", 1);
   });
