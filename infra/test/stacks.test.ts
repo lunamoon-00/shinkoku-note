@@ -40,7 +40,7 @@ describe("本体スタック", () => {
 
   it("API は LINE の入口以外すべてログインが必要（Cognito のトークンを確かめる）", () => {
     const routes = Object.values(template.findResources("AWS::ApiGatewayV2::Route"));
-    expect(routes.length).toBe(28);
+    expect(routes.length).toBe(30);
     const publicRoutes = ["POST /line/webhook", "GET /freee/callback"]; // それぞれ署名・合言葉で本物か確かめる
     for (const route of routes) {
       const expected = publicRoutes.includes(route.Properties.RouteKey) ? "NONE" : "JWT";

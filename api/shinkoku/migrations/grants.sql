@@ -38,3 +38,7 @@ grant execute on function users_to_remind() to shinkoku_app;
 grant select, insert, update, delete on freee_connections, freee_oauth_states, freee_syncs to shinkoku_app;
 grant execute on function freee_consume_state(text) to shinkoku_app;
 grant execute on function users_with_pending_freee() to shinkoku_app;
+
+-- 0008: 確定申告の計算
+grant select on tax_rules to shinkoku_app;
+grant select, insert, update on tax_inputs to shinkoku_app;

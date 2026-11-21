@@ -44,7 +44,7 @@ def database():
 @pytest.fixture
 def app_con(database, monkeypatch):
     """アプリ用ユーザー（shinkoku_app）での接続。テストごとに仕訳を空にする。"""
-    database.run("truncate journal_entries, journal_lines, audit_logs, profiles, import_files, partner_rules, line_links, line_link_codes, recurring_rules, recurring_runs, freee_connections, freee_oauth_states, freee_syncs cascade")
+    database.run("truncate journal_entries, journal_lines, audit_logs, profiles, import_files, partner_rules, line_links, line_link_codes, recurring_rules, recurring_runs, freee_connections, freee_oauth_states, freee_syncs, tax_inputs cascade")
     monkeypatch.setenv("DATABASE_PASSWORD", APP_PASSWORD)
     con = db.connect(user="shinkoku_app")
     yield con

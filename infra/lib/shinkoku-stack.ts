@@ -342,6 +342,8 @@ export class ShinkokuStack extends Stack {
       ["/freee/connect", apigw.HttpMethod.POST],
       ["/freee/sources", apigw.HttpMethod.PUT],
       ["/entries/{id}/freee", apigw.HttpMethod.GET],
+      ["/tax/{year}", apigw.HttpMethod.GET],
+      ["/tax/{year}/inputs", apigw.HttpMethod.PUT],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });

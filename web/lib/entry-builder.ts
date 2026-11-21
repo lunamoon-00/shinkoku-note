@@ -123,7 +123,7 @@ function mergeLines(lines: EntryLineInput[]): EntryLineInput[] {
   const merged = new Map<string, EntryLineInput>();
   for (const line of lines) {
     if (line.amount <= 0) continue;
-    const key = `${line.side}:${line.account_code}`;
+    const key = `${line.side}:${line.account_code}:${line.tag ?? ""}`; // 源泉徴収の印がちがう行はまとめない
     const found = merged.get(key);
     if (found) found.amount += line.amount;
     else merged.set(key, { ...line });
@@ -148,7 +148,7 @@ export function toEntryInput(form: EntryForm): EntryInput {
       ...base,
       lines: mergeLines([
         { side: "debit", account_code: DEPOSIT_TO[form.depositTo].code, amount: form.received },
-        { side: "debit", account_code: CODES.ownerDrawing, amount: withholdingOf(form) },
+        { side: "debit", account_code: CODES.ownerDrawing, amount: withholdingOf(form), tag: "withholding" },
         { side: "credit", account_code: CODES.sales, amount: form.gross },
       ]),
     };
@@ -171,15 +171,12 @@ export function fromEntry(entry: Entry, expenseCodes: Set<string>): EntryForm {
   // 報酬：貸方が「売上」1行だけ
   if (credits.length === 1 && credits[0].account_code === CODES.sales) {
     const gross = credits[0].amount;
-    const bank = debits.find((l) => l.account_code === CODES.businessBank);
-    const drawing = debits.find((l) => l.account_code === CODES.ownerDrawing);
-    const onlyKnown = debits.every((l) => l.account_code === CODES.businessBank || l.account_code === CODES.ownerDrawing);
-    if (onlyKnown && bank) {
-      return { kind: "income", ...common, gross, received: bank.amount, depositTo: "businessBank" };
-    }
-    if (onlyKnown && drawing && !bank) {
-      // 個人の口座に入金：源泉徴収とまとまっているので、入金額は「報酬」として開く（あとで直せる）
-      return { kind: "income", ...common, gross, received: gross, depositTo: "personal" };
+    const withheld = debits.filter((l) => l.tag === "withholding").reduce((s, l) => s + l.amount, 0);
+    const deposits = debits.filter((l) => l.tag !== "withholding");
+    const onlyKnown = deposits.length === 1 && [CODES.businessBank, CODES.ownerDrawing].includes(deposits[0].account_code as "1200");
+    if (onlyKnown) {
+      const depositTo = deposits[0].account_code === CODES.businessBank ? "businessBank" : "personal";
+      return { kind: "income", ...common, gross, received: gross - withheld, depositTo };
     }
   }
 

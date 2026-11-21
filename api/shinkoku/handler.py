@@ -15,7 +15,7 @@ import pg8000.exceptions
 
 import os
 
-from . import csv_import, db, freee_api, freee_sync, freee_worker, ledger, receipts, recurring
+from . import csv_import, db, freee_api, freee_sync, freee_worker, ledger, receipts, recurring, tax_service
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -157,6 +157,14 @@ def route(con, user_id: str, event: dict):
     if key == "GET /entries/{id}/freee":
         ledger.get_entry(con, path.get("id", ""))  # 自分の記録でなければ NotFound
         return 200, {"sync": freee_sync.entry_sync(con, path.get("id", ""))}
+    if key in ("GET /tax/{year}", "PUT /tax/{year}/inputs"):
+        raw = str(path.get("year", ""))
+        if not raw.isdigit() or not 2025 <= int(raw) <= 2100:
+            raise ledger.ValidationError("年は 2026 のような4桁の数字で入れてください")
+        year = int(raw)
+        if key == "PUT /tax/{year}/inputs":
+            tax_service.save_inputs(con, user_id, year, _body(event))
+        return 200, tax_service.compute(con, year)
     if key == "GET /review":
         return 200, {"count": ledger.review_count(con)}
     if key == "GET /line":
