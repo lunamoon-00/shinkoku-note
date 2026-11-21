@@ -189,3 +189,19 @@ test("毎月の固定費：家賃を30%で登録すると、過去の月の分�
   await page.getByRole("button", { name: "お休みする" }).click();
   await expect(page.getByText("お休み中")).toBeVisible();
 });
+
+test("freeeとつなぐ：許可してもどってくると、つながって送るものを選べる（お試しモード）", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/settings/");
+  await page.getByRole("button", { name: "freeeとつなぐ" }).click();
+  await expect(page.getByText("freee とつながりました！")).toBeVisible();
+  await expect(page.getByText("お試し事業所 とつながっています")).toBeVisible();
+  const csv = page.getByRole("checkbox", { name: /CSVで取りこんだもの/ });
+  await expect(csv).not.toBeChecked();
+  await csv.check();
+  await expect(csv).toBeChecked();
+  await page.getByRole("button", { name: "つなぐのをやめる" }).click();
+  await page.getByRole("button", { name: "やめる", exact: true }).click();
+  await expect(page.getByRole("button", { name: "freeeとつなぐ" })).toBeVisible();
+});

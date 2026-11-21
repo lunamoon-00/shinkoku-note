@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
+import { FreeeConnect } from "@/components/freee-connect";
 import { LineConnect } from "@/components/line-connect";
 import { RequireSession, useSession } from "@/components/session";
 import { Button, Card, Choice, Field, Help, inputClass, Notice, PageTitle } from "@/components/ui";
@@ -40,6 +41,9 @@ function Settings() {
       <PageTitle title="設定" lead={`${email} でログイン中`} />
       {message && <Notice tone={message.tone} title={message.text} />}
       <LineConnect />
+      <Suspense>
+        <FreeeConnect />
+      </Suspense>
       <Link href="/recurring/" className="flex items-center gap-3 rounded-[var(--radius-card)] bg-surface p-4 shadow-card transition hover:bg-surface-2">
         <span aria-hidden className="text-2xl">🔁</span>
         <span className="flex-1">
@@ -55,19 +59,6 @@ function Settings() {
           </Field>
           <Field label="屋号" htmlFor="business_name" hint="なければ空でOK" help={<Help title="屋号（やごう）">お店や事務所の名前のこと。開業届に書いた名前です。なくても確定申告はできます。</Help>}>
             <input id="business_name" className={inputClass} maxLength={50} value={draft.business_name} onChange={(e) => setDraft({ ...draft, business_name: e.target.value })} />
-          </Field>
-        </Card>
-        <Card>
-          <Field label="freee（フリー）とのつなぎ方">
-            <Choice
-              name="mode"
-              value={draft.mode}
-              onChange={(mode) => setDraft({ ...draft, mode })}
-              options={[
-                { value: "in_app", label: "このアプリだけで使う", hint: "確定申告に入れる数字まで、このアプリで出します" },
-                { value: "freee", label: "freee に送る", hint: "記録を freee に自動で入れます（送る機能はもうすぐ使えます）" },
-              ]}
-            />
           </Field>
         </Card>
         <Card>

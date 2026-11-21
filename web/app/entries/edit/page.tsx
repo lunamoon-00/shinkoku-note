@@ -6,6 +6,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { EntryEditor } from "@/components/entry-editor";
+import { FreeeBadge } from "@/components/freee-badge";
 import { ReceiptPhoto } from "@/components/receipt-photo";
 import { RequireSession } from "@/components/session";
 import { Button, ButtonLink, Card, Notice, PageTitle, Spinner } from "@/components/ui";
@@ -81,6 +82,7 @@ function Edit() {
       )}
       {error && <Notice tone="danger" title="うまくいきませんでした">{error}</Notice>}
       {entry.has_receipt && <ReceiptPhoto entryId={entry.id} />}
+      <FreeeBadge entryId={entry.id} key={`freee-${entry.updated_at}`} />
 
       <EntryEditor
         key={entry.updated_at}

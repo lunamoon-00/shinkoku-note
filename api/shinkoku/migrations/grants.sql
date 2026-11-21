@@ -33,3 +33,8 @@ grant select, insert, update, delete on recurring_rules to shinkoku_app;
 grant select, insert on recurring_runs to shinkoku_app;
 grant execute on function users_with_recurring_rules() to shinkoku_app;
 grant execute on function users_to_remind() to shinkoku_app;
+
+-- 0007: freee 連携
+grant select, insert, update, delete on freee_connections, freee_oauth_states, freee_syncs to shinkoku_app;
+grant execute on function freee_consume_state(text) to shinkoku_app;
+grant execute on function users_with_pending_freee() to shinkoku_app;
