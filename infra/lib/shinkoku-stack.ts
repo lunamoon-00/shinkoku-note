@@ -1,5 +1,5 @@
 // 申告ノートの本体：ログイン・DB・ファイル置き場。（画面の配信は web-stack.ts）
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, RemovalPolicy, Stack, TimeZone, type StackProps } from "aws-cdk-lib";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -9,6 +9,8 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as scheduler from "aws-cdk-lib/aws-scheduler";
+import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import * as triggers from "aws-cdk-lib/triggers";
@@ -204,6 +206,43 @@ export class ShinkokuStack extends Stack {
       timeout: Duration.minutes(5),
     });
 
+    // ───────── 目覚まし（4c）：毎朝のくり返し記録・毎週の確認待ちお知らせ ─────────
+    const schedulerFn = new lambda.Function(this, "SchedulerFunction", {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      code,
+      handler: "shinkoku.scheduler.handler",
+      memorySize: 256,
+      timeout: Duration.minutes(5), // DB が止まっていたら起きるのを待つ
+      environment: { ...dbEnv, DB_USER: DB_APP_USER, DB_CONNECT_TIMEOUT: "60" },
+      logGroup: new logs.LogGroup(this, "SchedulerLogs", {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    schedulerFn.addToRolePolicy(dbConnect(DB_APP_USER));
+    schedulerFn.addToRolePolicy(readParams("/shinkoku/line/channel-access-token"));
+
+    // 時間は日本時間で決める（AWS はふだん世界標準時だが、Scheduler はタイムゾーンを指定できる）
+    new scheduler.Schedule(this, "RecurringDaily", {
+      scheduleName: "shinkoku-recurring-daily",
+      description: "毎朝6時：くり返し設定（家賃など）の記録日が来た分を記録する",
+      schedule: scheduler.ScheduleExpression.cron({ minute: "0", hour: "6", timeZone: TimeZone.ASIA_TOKYO }),
+      target: new schedulerTargets.LambdaInvoke(schedulerFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({ task: "recurring" }),
+        retryAttempts: 2, // 何回やりなおしても二重にならないので、失敗したらやりなおす
+      }),
+    });
+    new scheduler.Schedule(this, "ReviewReminderWeekly", {
+      scheduleName: "shinkoku-review-reminder-weekly",
+      description: "毎週月曜9時：確認待ちがある人に LINE でお知らせ",
+      schedule: scheduler.ScheduleExpression.cron({ minute: "0", hour: "9", weekDay: "MON", timeZone: TimeZone.ASIA_TOKYO }),
+      target: new schedulerTargets.LambdaInvoke(schedulerFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({ task: "review_reminder" }),
+        retryAttempts: 0, // やりなおすと同じお知らせが2回届くので、やりなおさない
+      }),
+    });
+
     // ログインしている人だけ通す（Cognito のトークンを API Gateway が確かめる）
     const authorizer = new HttpUserPoolAuthorizer("CognitoAuthorizer", userPool, {
       userPoolClients: [userPoolClient],
@@ -245,6 +284,10 @@ export class ShinkokuStack extends Stack {
       ["/line/link-code", apigw.HttpMethod.POST],
       ["/imports/csv", apigw.HttpMethod.POST],
       ["/imports/{id}/commit", apigw.HttpMethod.POST],
+      ["/recurring", apigw.HttpMethod.GET],
+      ["/recurring", apigw.HttpMethod.POST],
+      ["/recurring/{id}/active", apigw.HttpMethod.PUT],
+      ["/recurring/{id}", apigw.HttpMethod.DELETE],
     ];
     for (const [path, method] of routes) {
       httpApi.addRoutes({ path, methods: [method], integration, authorizer });

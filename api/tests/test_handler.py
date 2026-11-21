@@ -99,3 +99,16 @@ def test_DBが起動中なら503で待ってねと返す(monkeypatch):
     res = handler.handler(event, None)
     assert res["statusCode"] == 503
     assert json.loads(res["body"])["error"]["code"] == "DB_STARTING"
+
+
+def test_くり返し設定を作ると_過去の分がすぐ記録される(call):
+    status, body = call("POST /recurring", body={"name": "スマホ代", "account_code": "5140", "amount": 4980,
+                                                  "business_ratio": 50, "day_of_month": 1, "start_month": "2026-01"})
+    assert status == 201 and body["created"] >= 1 and body["rule"]["monthly_expense"] == 2490
+    status, body = call("GET /recurring")
+    assert status == 200 and len(body["rules"]) == 1
+    rule_id = body["rules"][0]["id"]
+    status, body = call("PUT /recurring/{id}/active", path={"id": rule_id}, body={"active": False})
+    assert status == 200 and body["rule"]["active"] is False
+    status, _ = call("DELETE /recurring/{id}", path={"id": rule_id})
+    assert status == 204

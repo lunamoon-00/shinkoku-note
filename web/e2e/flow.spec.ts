@@ -173,3 +173,19 @@ test("CSVから取りこむ：仕事の分だけ選んで、科目を直して�
   await expect(page.getByText("本・新聞・資料代")).toBeVisible();
   await expect(page.getByText("スーパー")).toBeHidden();
 });
+
+test("毎月の固定費：家賃を30%で登録すると、過去の月の分がまとめて記録される", async ({ page }) => {
+  await login(page);
+  await onboard(page);
+  await page.goto("/recurring/");
+  await expect(page.getByText("まだ登録がありません")).toBeVisible();
+  await page.getByRole("button", { name: /家賃/ }).click();
+  await page.getByLabel("毎月の金額（全額）").fill("80000");
+  await expect(page.getByText("24,000円")).toBeVisible();
+  await page.getByLabel("いつから？").fill(`${new Date().getFullYear()}-01`);
+  await page.getByRole("button", { name: "登録する" }).click();
+  await expect(page.getByText(/登録しました/)).toBeVisible();
+  await expect(page.getByText("80,000円 の 30%")).toBeVisible();
+  await page.getByRole("button", { name: "お休みする" }).click();
+  await expect(page.getByText("お休み中")).toBeVisible();
+});

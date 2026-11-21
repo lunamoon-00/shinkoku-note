@@ -23,6 +23,14 @@ function Record() {
         </span>
         <span aria-hidden className="text-sub">›</span>
       </Link>
+      <Link href="/recurring/" className="mb-5 flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card transition hover:bg-surface-2">
+        <span aria-hidden className="text-2xl">🔁</span>
+        <span className="flex-1">
+          <span className="block font-bold">毎月の固定費を登録する</span>
+          <span className="block text-sm text-sub">家賃・スマホ代などは、1回登録すれば毎月自動で記録</span>
+        </span>
+        <span aria-hidden className="text-sub">›</span>
+      </Link>
       {accounts.status === "loading" && <div className="py-10 text-center text-sub"><Spinner label="読みこんでいます…" /></div>}
       {accounts.status === "error" && (
         <div className="flex flex-col gap-3">

@@ -40,7 +40,7 @@ describe("本体スタック", () => {
 
   it("API は LINE の入口以外すべてログインが必要（Cognito のトークンを確かめる）", () => {
     const routes = Object.values(template.findResources("AWS::ApiGatewayV2::Route"));
-    expect(routes.length).toBe(18);
+    expect(routes.length).toBe(22);
     for (const route of routes) {
       const expected = route.Properties.RouteKey === "POST /line/webhook" ? "NONE" : "JWT";
       expect([route.Properties.RouteKey, route.Properties.AuthorizationType ?? "NONE"]).toEqual([route.Properties.RouteKey, expected]);
@@ -74,7 +74,7 @@ describe("本体スタック", () => {
     const fns = template.findResources("AWS::Lambda::Function", {
       Properties: { Runtime: "python3.13" },
     });
-    expect(Object.keys(fns).length).toBe(4); // API・マイグレーション・LINEの受け取り係・読み取り係
+    expect(Object.keys(fns).length).toBe(5); // API・マイグレーション・LINEの受け取り係・読み取り係・目覚まし係
     for (const fn of Object.values(fns)) {
       expect(fn.Properties.Architectures).toEqual(["arm64"]);
     }
@@ -89,6 +89,19 @@ describe("本体スタック", () => {
     const policies = JSON.stringify(template.findResources("AWS::IAM::Policy"));
     expect(policies).toContain("/shinkoku_app");
     expect(policies).toContain("/postgres"); // マイグレーション用だけ
+  });
+
+  it("目覚ましは日本時間：毎朝6時にくり返しの記録、毎週月曜9時にお知らせ（お知らせはやりなおさない）", () => {
+    template.hasResourceProperties("AWS::Scheduler::Schedule", {
+      ScheduleExpression: "cron(0 6 * * ? *)",
+      ScheduleExpressionTimezone: "Asia/Tokyo",
+      Target: Match.objectLike({ Input: JSON.stringify({ task: "recurring" }), RetryPolicy: Match.objectLike({ MaximumRetryAttempts: 2 }) }),
+    });
+    template.hasResourceProperties("AWS::Scheduler::Schedule", {
+      ScheduleExpression: "cron(0 9 ? * MON *)",
+      ScheduleExpressionTimezone: "Asia/Tokyo",
+      Target: Match.objectLike({ Input: JSON.stringify({ task: "review_reminder" }), RetryPolicy: Match.objectLike({ MaximumRetryAttempts: 0 }) }),
+    });
   });
 
   it("公開のたびにマイグレーションを自動で流す", () => {

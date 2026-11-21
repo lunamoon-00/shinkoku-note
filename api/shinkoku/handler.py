@@ -15,7 +15,7 @@ import pg8000.exceptions
 
 import os
 
-from . import csv_import, db, ledger, receipts
+from . import csv_import, db, ledger, receipts, recurring
 
 JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"}
 
@@ -128,6 +128,23 @@ def route(con, user_id: str, event: dict):
         )
     if key == "POST /imports/{id}/commit":
         return 200, csv_import.commit(con, user_id, path.get("id", ""), _body(event).get("rows"))
+    if key == "GET /recurring":
+        return 200, {"rules": recurring.list_rules(con)}
+    if key == "POST /recurring":
+        rule = recurring.create_rule(con, user_id, _body(event))
+        # 「いつから」が過去なら、その月からの分をすぐに記録する
+        created = recurring.run_for_user(con, user_id, recurring.today_jst())
+        return 201, {"rule": rule, "created": created}
+    if key == "PUT /recurring/{id}/active":
+        active = _body(event).get("active")
+        if not isinstance(active, bool):
+            raise ledger.ValidationError("はい（true）かいいえ（false）で送ってください")
+        rule = recurring.set_active(con, user_id, path.get("id", ""), active)
+        created = recurring.run_for_user(con, user_id, recurring.today_jst()) if active else 0
+        return 200, {"rule": rule, "created": created}
+    if key == "DELETE /recurring/{id}":
+        recurring.delete_rule(con, user_id, path.get("id", ""))
+        return 204, None
     if key == "GET /review":
         return 200, {"count": ledger.review_count(con)}
     if key == "GET /line":

@@ -27,3 +27,9 @@ grant select, insert, update, delete on line_links, line_link_codes, partner_rul
 grant select, insert, update on import_files to shinkoku_app;
 grant execute on function line_link_by_code(text, text) to shinkoku_app;
 grant execute on function line_user_lookup(text) to shinkoku_app;
+
+-- 0006: くり返し設定・お知らせ
+grant select, insert, update, delete on recurring_rules to shinkoku_app;
+grant select, insert on recurring_runs to shinkoku_app;
+grant execute on function users_with_recurring_rules() to shinkoku_app;
+grant execute on function users_to_remind() to shinkoku_app;
